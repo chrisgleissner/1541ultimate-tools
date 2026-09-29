@@ -295,6 +295,46 @@ closing its connection first; the monitor logs them without alerting.
 Stop the monitor with `--stop`, which signals the pid in `mon/monitor.pid`. A
 `pkill -f` pattern also matches the shell that runs it.
 
+## Debugging with gdb
+
+The CPU has no debug module: nothing over JTAG can halt it, step it or read its
+live registers, and the only CPU control is holding it in reset. What JTAG does
+offer is enough for most post-mortem and hang analysis, and
+`tooling/u64ii_gdb.sh` turns it into a gdb session without changing the firmware:
+
+```bash
+tooling/u64ii_gdb.sh                       # ELF of this checkout's u64ii build
+tooling/u64ii_gdb.sh path/to/ultimate.elf  # the ELF of whatever is running
+```
+
+`u64ii_gdbstub.py` is a gdb remote server on the host. It reads memory through the
+FPGA's JTAG memory port while the firmware keeps running; the CPU has no data
+cache, so it reads what the CPU wrote. It presents every FreeRTOS task as a gdb
+thread. A task's registers are the ones the FreeRTOS RISC-V port saved when the
+task last trapped: a 30-word frame on its stack (`port_asm.S`), whose address is
+the first word of the task's control block. So:
+
+- `info threads` lists every task with its state and priority;
+- `thread N` then `bt` shows where a blocked task waits, with arguments;
+- after a GURU MEDITATION, the crashed task's frame shows where it faulted;
+- `p variable`, `x/16x address` read live memory.
+
+Limits: the running task's registers are those of its last trap; `continue`,
+`step` and register writes are refused; memory writes need `U64II_GDB_WRITES=1`;
+there are no watchpoints. Reads above `0x10000000` (the I/O space) are refused,
+because reading some registers has side effects.
+
+gdb's own unwinders stop after the first frame of this firmware: the compiler's
+call frame information marks the return address undefined in shrink-wrapped
+functions, and the RISC-V prologue analyser gives up at the first branch.
+`u64ii_gdb_unwind.py` replaces them with a scan of the whole function for its frame
+allocation and its `ra`/`s0` saves. It needs a RISC-V gdb built with Python, such
+as the xPack `riscv-none-embed-gdb-py3` or `gdb-multiarch`; the wrapper finds one
+and warns when it can only find a gdb without Python.
+
+The server takes the device lock for its whole session. Stop it (quit gdb) before
+running other JTAG commands.
+
 ## Recovery
 
 - **Anything the tool did:** `tooling/u64ii_jtag.sh fpga` (about 7 s) reconfigures the

@@ -57,6 +57,10 @@ The resulting layout:
     ├── test_u64ii_jtag.py           host tests against a simulated FT232H
     ├── test_apply_pr.sh             host tests for apply_pr.sh
     ├── c64u_monitor.py              video stream, REST and console watcher
+    ├── u64ii_gdb.sh                 gdb over JTAG: tasks as threads, backtraces
+    ├── u64ii_gdbstub.py             the gdb remote server it starts
+    ├── u64ii_gdb_unwind.py          unwinder for gdb's missing frames
+    ├── test_u64ii_gdbstub.py        host tests for the server
     └── apply_pr.sh                  worktree with upstream PRs applied, uncommitted
 ```
 
