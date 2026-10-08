@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""The README's install steps, run as written.
+"""The README's development install, run as written.
 
-README.md shows how to overlay the tools onto a 1541ultimate checkout and how
-to exclude them from git. This module extracts those two shell blocks so that
-the tests and CI run exactly what a reader runs, and cannot drift from it.
+README.md shows how to install the tools into a 1541ultimate checkout from a
+clone of this repository. This module extracts that shell block so that the
+tests and CI run exactly what a reader runs, and cannot drift from it.
 
     python3 tests/upstream/readme.py PARENT
 
 installs into PARENT/1541ultimate from PARENT/1541ultimate-tools, the layout
-the README assumes, and excludes the installed files from git.
+the README assumes.
 """
 
 import os
@@ -17,21 +17,21 @@ import subprocess
 import sys
 
 TOOLS = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+INSTALL_LINE = "1541ultimate-tools/install.sh 1541ultimate"
 
 
-def blocks(readme=os.path.join(TOOLS, "README.md")):
-    """(install, exclude): the two bash blocks, each from its `cd 1541ultimate` on."""
+def install_block(readme=os.path.join(TOOLS, "README.md")):
+    """The development install block, from its install.sh line on.
+
+    The block starts with the two `git clone` commands, which the caller has
+    already done its own way.
+    """
     with open(readme) as handle:
         text = handle.read()
-    section = text[text.index("## Installing into a checkout"):text.index("## Prerequisites")]
-    found = re.findall(r"```bash\n(.*?)```", section, re.S)
-    install = [b for b in found if "cp -r ../1541ultimate-tools/" in b]
-    exclude = [b for b in found if ".git/info/exclude" in b]
-    if len(install) != 1 or len(exclude) != 1:
-        raise ValueError("README.md no longer has one install and one exclude block")
-    # Both blocks change into the checkout first; the install block starts with
-    # the clone commands, which the caller has already done its own way.
-    return tuple(b[b.index("cd 1541ultimate"):] for b in (install[0], exclude[0]))
+    found = [b for b in re.findall(r"```bash\n(.*?)```", text, re.S) if INSTALL_LINE in b]
+    if len(found) != 1:
+        raise ValueError(f"README.md has {len(found)} blocks running {INSTALL_LINE!r}, expected 1")
+    return found[0][found[0].index(INSTALL_LINE):]
 
 
 def run(script, parent):
@@ -42,16 +42,10 @@ def main(argv):
     if len(argv) != 2:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    parent = argv[1]
-    for name, script in zip(("install", "exclude"), blocks()):
-        result = run(script, parent)
-        sys.stdout.write(result.stdout)
-        sys.stderr.write(result.stderr)
-        if result.returncode:
-            print(f"README {name} block failed with exit status {result.returncode}",
-                  file=sys.stderr)
-            return 1
-    return 0
+    result = run(install_block(), argv[1])
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Installs the tools into a 1541ultimate checkout exactly as README.md says.
 
-The README's own shell blocks are run, unchanged, against a fresh clone of the
-checkout: the `cp` block that overlays the tools and the block that excludes
-them from git. The tests then check what the README promises: a clean
-`git status`, and a `build-tool` that starts and knows every target.
+The README's development install block is run, unchanged, against a fresh
+clone of the checkout. The tests then check what the README promises: the
+tools in place and executable, a clean `git status`, and a `build-tool` that
+starts and knows every target.
 
     ULTIMATE_REPO_DIR=/path/to/1541ultimate python3 -m unittest tests/upstream/test_overlay.py
 
@@ -44,9 +44,7 @@ class Overlay(unittest.TestCase):
         # The README works from a parent directory holding both checkouts.
         os.symlink(TOOLS, os.path.join(cls.tmp, "1541ultimate-tools"))
         subprocess.run(["git", "clone", "-q", "--shared", REPO, cls.checkout], check=True)
-        install, exclude = readme.blocks()
-        cls.install = readme.run(install, cls.tmp)
-        cls.exclude = readme.run(exclude, cls.tmp)
+        cls.install = readme.run(readme.install_block(), cls.tmp)
 
     @classmethod
     def tearDownClass(cls):
@@ -67,11 +65,11 @@ class Overlay(unittest.TestCase):
             with self.subTest(executable=path):
                 self.assertTrue(os.access(os.path.join(self.checkout, path), os.X_OK))
 
-    def test_readme_exclude_block_leaves_git_status_clean(self):
-        self.assertEqual(self.exclude.returncode, 0, self.exclude.stderr)
+    def test_git_status_stays_clean(self):
+        self.assertEqual(self.install.returncode, 0, self.install.stderr)
         status = subprocess.run(["git", "status", "--porcelain"], cwd=self.checkout,
                                 capture_output=True, text=True, check=True).stdout
-        self.assertEqual(status, "", "the README's exclude list misses these files")
+        self.assertEqual(status, "", "the installer leaves these paths visible to git")
 
     def test_build_tool_lists_every_target(self):
         result = self.run_tool("--list-targets")

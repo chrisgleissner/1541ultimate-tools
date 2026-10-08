@@ -1,353 +1,343 @@
 # 1541ultimate-tools
 
+![Logo](./docs/1541ultimate-tools-logo.png)
+
+Build, deploy and debug tooling for the [1541 Ultimate](https://github.com/GideonZ/1541ultimate)
+firmware.
+
 [![Tests](https://github.com/chrisgleissner/1541ultimate-tools/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/chrisgleissner/1541ultimate-tools/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/chrisgleissner/1541ultimate-tools/graph/badge.svg)](https://codecov.io/gh/chrisgleissner/1541ultimate-tools)
+[![Release](https://img.shields.io/github/v/release/chrisgleissner/1541ultimate-tools)](https://github.com/chrisgleissner/1541ultimate-tools/releases)
 [![Hardware](https://img.shields.io/badge/hardware-Ultimate%2064%20%7C%20C64%20Ultimate%20%7C%20Ultimate%20II-blue)](https://github.com/GideonZ/1541ultimate)
 [![Runtime](https://img.shields.io/badge/runtime-Python%20%7C%20Bash%20%7C%20Docker-blue)](https://github.com/chrisgleissner/1541ultimate-tools)
 
-Build and deployment tooling for the [1541 Ultimate](https://github.com/GideonZ/1541ultimate)
-firmware. These files are not part of that repository. They overlay onto a checkout of
-it and provide:
+These tools are not part of the firmware repository. You install them into a checkout
+of it, and they stay out of git there.
 
-- `build-tool` - a builder for every firmware target, compiling inside Docker, with
-  optional FTP deploy, JTAG deploy, and device monitoring.
-- `build` - an orchestrator that runs the full sweep: clean, host unit tests, build,
-  deploy, then the remaining targets.
-- `tooling/build_and_deploy_u64.sh` - a fast JTAG redeploy of an already-built U64
-  application, used both by hand and by the end-to-end test suites.
-- `tooling/flash_u64.py` - an unattended flash of an Ultimate 64 Elite (MK1): runs the
-  updater over JTAG, answers its questions by their text through gdb, and presses the
-  power button through an actuator such as `tooling/switchbot_press.py`.
-- `tooling/u64ii_jtag.sh` and `tooling/build_and_deploy_u64ii.sh` - JTAG for the C64
-  Ultimate and Ultimate 64 Elite II through an FT232H or a USB-Blaster: run an application or an FPGA
-  image from RAM, read the console and memory. Nothing is flashed.
-- `vivado/install.sh` - an unattended install of AMD Vivado 2024.1 with Artix-7 support
-  only, including the AMD login, for building the Artix-7 FPGA images.
-- `patches/` - optional patches against the upstream repository.
+- [Quick start](#quick-start)
+- [What you get](#what-you-get)
+- [Install](#install)
+- [Prerequisites](#prerequisites)
+- [Build firmware](#build-firmware)
+- [Run and deploy on a device](#run-and-deploy-on-a-device)
+- [Device settings](#device-settings)
+- [Troubleshooting](#troubleshooting)
+- [Documentation](#documentation)
+- [Development](#development)
 
-`docs/u64-unattended-flash.md` describes the unattended U64 flash.
-`docs/u64-jtag-deploy.md` explains what the U64 JTAG deploy does and, more importantly,
-what it deliberately does not do. `docs/c64u-jtag.md` covers the C64 Ultimate and
-Ultimate 64 Elite II, whose FPGA, CPU and JTAG path are different.
-`docs/vivado-install.md` covers the Vivado install.
+## Quick start
 
-## Installing into a checkout
+You need git, Docker and a 1541ultimate checkout. If you have no checkout yet:
 
-These files overlay onto the root of a 1541ultimate checkout:
+```bash
+git clone https://github.com/GideonZ/1541ultimate.git
+```
+
+Install release 0.1.0 into it. Set `ULTIMATE` to your checkout:
+
+```bash
+VERSION=0.1.0
+ULTIMATE="$HOME/1541ultimate"
+TMP="$(mktemp -d)"
+curl -fsSL "https://github.com/chrisgleissner/1541ultimate-tools/archive/refs/tags/v${VERSION}.tar.gz" | tar -xz -C "$TMP"
+"$TMP/1541ultimate-tools-${VERSION}/install.sh" "$ULTIMATE"
+rm -rf "$TMP"
+```
+
+Build the C64 Ultimate / Ultimate 64 Elite II firmware:
+
+```bash
+cd "$ULTIMATE"
+./build-tool --check-support      # what this machine can build
+./build-tool u64ii                # writes update_<commit>.ue2
+```
+
+## What you get
+
+| Command | What it does | Details |
+|---|---|---|
+| `./build-tool` | Builds any firmware target inside Docker, and optionally deploys it over FTP or JTAG | [Build firmware](#build-firmware) |
+| `./build` | Runs the full sweep: clean, host unit tests, build, deploy, the remaining targets | [Build firmware](#build-firmware) |
+| `tooling/build_and_deploy_u64.sh` | Runs a built Ultimate 64 application from RAM over JTAG, in about 30 s | [docs/u64-jtag-deploy.md](docs/u64-jtag-deploy.md) |
+| `tooling/flash_u64.py` | Flashes an Ultimate 64 Elite with nobody at the keyboard | [docs/u64-unattended-flash.md](docs/u64-unattended-flash.md) |
+| `tooling/u64ii_jtag.sh` | C64 Ultimate / Ultimate 64 Elite II over JTAG (FT232H or USB-Blaster): run an FPGA image and application from RAM, read the console and memory | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
+| `tooling/u64ii_gdb.sh` | gdb for the running C64 Ultimate application: tasks as threads, backtraces | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
+| `tooling/c64u_monitor.py` | Watches a C64 Ultimate's video stream, REST API and console | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
+| `tooling/apply_pr.sh` | Makes a throwaway worktree with upstream pull requests applied | `./build-tool --help` |
+| `vivado/install.sh` | Installs AMD Vivado 2024.1 for Artix-7 without interaction | [docs/vivado-install.md](docs/vivado-install.md) |
+
+`vivado/` and `patches/` are used from this repository; the installer does not copy them.
+
+## Install
+
+### Apply a release to an existing checkout
+
+Pick a release from the [releases page](https://github.com/chrisgleissner/1541ultimate-tools/releases),
+then run these commands. Only the first two lines change:
+
+```bash
+VERSION=0.1.0                        # the release to apply
+ULTIMATE="$HOME/1541ultimate"        # your 1541ultimate checkout
+TMP="$(mktemp -d)"
+curl -fsSL "https://github.com/chrisgleissner/1541ultimate-tools/archive/refs/tags/v${VERSION}.tar.gz" | tar -xz -C "$TMP"
+"$TMP/1541ultimate-tools-${VERSION}/install.sh" "$ULTIMATE"
+rm -rf "$TMP"
+```
+
+Check which release a checkout has:
+
+```bash
+cat "$ULTIMATE/.1541ultimate-tools-version"
+```
+
+To move to another release, run the same commands with a different `VERSION`. Add
+`--dry-run` before the checkout path to see what the installer would do first.
+
+### Install the latest development version
 
 ```bash
 git clone https://github.com/GideonZ/1541ultimate.git
 git clone https://github.com/chrisgleissner/1541ultimate-tools.git
-
-cd 1541ultimate
-cp -r ../1541ultimate-tools/build \
-      ../1541ultimate-tools/build.cmd \
-      ../1541ultimate-tools/build-tool \
-      ../1541ultimate-tools/build-tool.d \
-      ../1541ultimate-tools/tooling \
-      ../1541ultimate-tools/.build-tool.env.example .
-chmod +x build build-tool tooling/*.sh tooling/*.py
+1541ultimate-tools/install.sh 1541ultimate
 ```
 
-The resulting layout:
+To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
 
-```
-1541ultimate/
-├── build                 orchestrator
-├── build.cmd             Windows shim for build
-├── build-tool            the builder
-├── build-tool.d/         helper libraries build-tool sources at startup
-├── .build-tool.env       optional per-checkout settings (copy the .example)
-└── tooling/
-    ├── build_and_deploy_u64.sh      U64: run the built ELF via nios2-download
-    ├── read_u64_jtag_terminal.sh    U64: nios2-terminal capture
-    ├── read_u64_uart_terminal.sh    U64: debug UART through a USB-TTL adapter
-    ├── build_and_deploy_u64ii.sh    C64U / U64E-II: run the built ultimate.bin
-    ├── read_u64ii_jtag_terminal.sh  C64U / U64E-II: console over JTAG
-    ├── u64ii_jtag.sh                C64U / U64E-II: JTAG tool (pyftdi venv)
-    ├── u64ii_jtag.py
-    ├── test_u64ii_jtag.py           host tests against a simulated FT232H and USB-Blaster
-    ├── test_apply_pr.sh             host tests for apply_pr.sh
-    ├── c64u_monitor.py              video stream, REST and console watcher
-    ├── test_c64u_monitor.py         host tests for the monitor
-    ├── u64ii_menu.py                C64U / U64E-II: drives the Telnet menu
-    ├── test_u64ii_menu.py           host tests for the menu driver
-    ├── u64ii_gdb.sh                 gdb over JTAG: tasks as threads, backtraces
-    ├── u64ii_gdbstub.py             the gdb remote server it starts
-    ├── u64ii_gdb_unwind.py          unwinder for gdb's missing frames
-    ├── test_u64ii_gdb_unwind.py     host tests for the unwinder
-    ├── test_u64ii_gdbstub.py        host tests for the server
-    ├── apply_pr.sh                  worktree with upstream PRs applied, uncommitted
-    ├── flash_u64.py                 U64: unattended flash over JTAG + gdb
-    ├── test_flash_u64.py            host tests for flash_u64.py
-    ├── switchbot_press.py           presses a SwitchBot Bot (U64 power button)
-    └── test_switchbot_press.py      host tests for switchbot_press.py
-```
+### What the installer changes
 
-`build-tool` will not start without `build-tool.d/` beside it.
+`install.sh CHECKOUT`:
 
-## Keeping these files out of the upstream repository
+- **Copies the tools:** `build`, `build.cmd`, `build-tool`, `build-tool.d/`,
+  `.build-tool.env.example` and the tools in `tooling/` into the checkout, and makes
+  the scripts executable.
+- **Does not copy anything else:** not this README, `docs/`, the logo, the tests,
+  `vivado/` or `patches/`.
+- **Records the version** in `.1541ultimate-tools-version`.
+- **Hides the tools from git:** it lists each installed path in the checkout's
+  `.git/info/exclude`. That file is local to the checkout and never committed, so
+  `git status` stays clean and no tool file can reach an upstream commit by accident.
+- **Leaves everything else alone:**
+  - It overwrites files from an earlier install, and leaves your own files in
+    `tooling/` alone.
+  - It never changes a tracked file.
+  - A second run adds no duplicate entries.
+  - It works in git worktrees.
 
-None of these paths are in the upstream `.gitignore`, so after copying them in they
-show up as untracked files and can be committed by accident. Exclude them locally
-rather than by editing the tracked `.gitignore`, which would be an unwanted change to
-the upstream repository:
-
-```bash
-cd 1541ultimate
-cat >> .git/info/exclude <<'IGNORE'
-build
-build-tool
-build.cmd
-tooling/
-.build-tool.env
-.build-tool.env.example
-IGNORE
-```
-
-`.git/info/exclude` uses the same syntax as `.gitignore` but is per-checkout and is
-never committed, so this affects nobody else. Confirm it worked:
-
-```bash
-git status --porcelain     # should print nothing
-```
-
-`build-tool.d/` needs no entry. The upstream `.gitignore` has a `*.d` rule for
-dependency files, which already covers it.
+It refuses a directory that is not a git checkout with the 1541ultimate layout
+(`software/` and `target/`).
 
 ## Prerequisites
 
 | Requirement | Needed for |
 |---|---|
-| Docker | Every RISC-V target (u2, u2pl, u64ii) |
-| Quartus and Nios II EDS, on the host | The Nios II targets (u64, u2plus). The RISC-V image has no Nios toolchain, so these cannot build inside Docker. |
-| USB-Blaster | U64 JTAG deploy and JTAG monitoring; C64 Ultimate / Ultimate 64 Elite II JTAG with `U64II_JTAG_URL=blaster` |
-| FT232H (e.g. Adafruit) and Python 3 | C64 Ultimate / Ultimate 64 Elite II JTAG only; pyftdi is installed into a virtual environment on first use |
-| Lattice Diamond | Full `u2pl` FPGA synthesis only. See the u2pl note below. |
+| Docker | Every RISC-V target (`u2`, `u2pl`, `u64ii`) |
+| Quartus and Nios II EDS, on the host | The Nios II targets (`u64`, `u2plus`); the Docker image has no Nios toolchain |
+| USB-Blaster | Ultimate 64 JTAG deploy and monitoring; optionally the C64 Ultimate JTAG tools |
+| FT232H (for example Adafruit) and Python 3 | C64 Ultimate / Ultimate 64 Elite II JTAG; pyftdi is installed into a virtual environment on first use |
+| Lattice Diamond | Full `u2pl` FPGA synthesis only (see [Troubleshooting](#troubleshooting)) |
 
-`build-tool` derives a prepared image `1541u-build:latest` from
+`build-tool` prepares a Docker image `1541u-build:latest` from
 `ghcr.io/gideonz/riscv:latest` the first time it runs.
 
-Check what is available before starting a long build:
+## Build firmware
+
+| Target | Output | Toolchain | Aliases |
+|---|---|---|---|
+| `u2` | `update.u2r` | RISC-V + Xilinx ISE (software only: cached FPGA) | |
+| `u2plus` | `update.u2p` | Nios II + Quartus (software only: cached FPGA) | |
+| `u2pl` | `update.u2l` | RISC-V + Lattice Diamond + ESP32-C3 | `u2l` |
+| `u64` | `update.u64` | Nios II + Quartus + ESP32 | |
+| `u64ii` | `update.ue2` | RISC-V + ESP32-S3; FPGA images from `external/` | `ue2`, `c64u` |
+
+The C64 Ultimate is Ultimate 64 Elite II hardware and uses the `u64ii` target.
 
 ```bash
-./build-tool --check-support
-./build-tool --list-targets
+./build-tool --check-support    # which targets this machine can build
+./build-tool --list-targets     # every target and its toolchain
+./build-tool u64ii              # one target
+./build-tool u64ii u64          # several targets
+./build-tool -s u2pl            # software only, with a cached FPGA bitstream
+./build-tool --parallel         # the default set (u64, u64ii, u2), concurrently
 ```
 
-## Targets
-
-```
-Target   Output          Toolchain required
--------  --------------  ------------------------------------------
-u2       update.u2r      RISC-V + Xilinx ISE (sw-only: cached FPGA)
-u2plus   update.u2p      Nios2 + Quartus (sw-only: cached FPGA)
-u2pl     update.u2l      RISC-V + Lattice Diamond + ESP32-C3
-u64      update.u64      Nios2 + Quartus + ESP32
-u64ii    update.ue2      RISC-V + ESP32-S3 (alias c64u; FPGA from external/)
-all      (all above)     builds u64 u64ii u2 (default)
-```
-
-Short aliases are accepted: `ue2` and `c64u` for `u64ii`, `u2l` for `u2pl`. The C64
-Ultimate is Ultimate 64 Elite II hardware and uses the same target.
-
-## Usage
-
-Build one or more targets:
-
-```bash
-./build-tool u64
-./build-tool u64ii
-./build-tool u64ii u64          # several in one invocation
-./build-tool -s u2pl            # software only, using a cached FPGA bitstream
-./build-tool --parallel         # default target set, concurrently
-```
-
-Build and deploy the U64 over JTAG in one step:
-
-```bash
-./build-tool --jtag u64
-```
-
-Or separately, which is the faster loop when only the application changed:
-
-```bash
-./build-tool u64
-bash tooling/build_and_deploy_u64.sh     # about 30 seconds
-```
-
-The deploy script takes no arguments and reads one fixed path:
-
-```
-target/u64/nios2/ultimate/result/ultimate.elf
-```
-
-It fails immediately if that file is absent, so build first. Set `INTEL_FPGA_ROOT` if
-the Intel FPGA tools are somewhere the script does not find on its own:
-
-```bash
-INTEL_FPGA_ROOT=/opt/intelFPGA_lite/19.1 bash tooling/build_and_deploy_u64.sh
-```
-
-Run a C64 Ultimate or Ultimate 64 Elite II application from RAM over JTAG (FT232H or USB-Blaster;
-see `docs/c64u-jtag.md` for wiring and the first `probe`):
-
-```bash
-./build-tool --jtag c64u                     # build ultimate.bin, run it from RAM
-./build-tool --jtag c64u --jtag-fpga warm    # keep the FPGA image, restart only the CPU
-./build-tool --jtag-monitor c64u             # the application's console output
-tooling/u64ii_jtag.sh probe                  # identify the board; changes nothing
-```
-
-Run a pull request without touching your checkout; build-tool applies it in a
-throwaway worktree and builds that (see `docs/c64u-jtag.md`, "Running a pull request"):
-
-```bash
-./build-tool --apply-pr 705 --pr-base upstream/master --jtag c64u
-```
-
-Build another firmware tree with the same layout, for example a C64 Ultimate firmware
-tree, with `--repo-dir`; build-tool builds its ESP32-S3 firmware first when needed:
-
-```bash
-./build-tool --repo-dir ../other-tree c64u
-```
-
-Run the full sweep, which cleans first, runs the host unit tests, and checks each
-artifact's size against an expected range:
+`./build` runs the full sweep. It cleans first, runs the host unit tests, builds,
+deploys, and checks each artifact's size. It takes no target, and it is slower than
+`build-tool`, so use it for a full check rather than for iteration:
 
 ```bash
 ./build                  # u64 -> JTAG -> FTP -> u64ii -> u2
 ./build --parallel       # u64 and u64ii concurrently, u2 last
 ```
 
-`build` takes no target argument. It is slower than calling `build-tool` directly, so
-use it for a full check rather than for iteration.
+`BUILD_TOOL_ALLOW_PARTIAL=1` lets a run with several targets continue past one that
+fails.
 
-## Device-specific configuration
+## Run and deploy on a device
 
-Deploy and verification steps need to know which device to talk to. Nothing is
-hardcoded; each setting is read from the environment, or from `.build-tool.env` beside
-the scripts (see `.build-tool.env.example`), and each one is skipped rather than
-failed when unset.
-
-| Variable | Used by | Effect when unset |
-|---|---|---|
-| `DEPLOY_HOST` | `build`, FTP deploy step | Step is skipped and reported as `SKIPPED` |
-| `DEPLOY_PATH` | `build`, FTP deploy step | Defaults to `/Usb1/firmware/u64/custom` |
-| `U64_VERIFY_HOST` | post-deploy REST check for u64 | Verification is skipped with a warning |
-| `U64II_VERIFY_HOST` | post-deploy REST check for u64ii | Verification is skipped with a warning |
-| `U64II_JTAG_URL` | FT232H for u64ii JTAG, or `blaster` for a USB-Blaster | `ftdi://ftdi:232h/1` |
-| `INTEL_FPGA_ROOT` | U64 JTAG deploy and monitor | Searched under `~/intelFPGA_lite`, `~/altera_lite`, `/opt/...` |
+### Ultimate 64 over JTAG
 
 ```bash
-export DEPLOY_HOST=my-u64          # hostname or IP
+./build-tool --jtag u64                     # build, then run from RAM
+./build-tool u64                            # or: build ...
+bash tooling/build_and_deploy_u64.sh        # ... then run the built ELF (about 30 s)
+```
+
+The deploy script takes no arguments and runs
+`target/u64/nios2/ultimate/result/ultimate.elf`, so build first. If the Intel FPGA
+tools are not found, set `INTEL_FPGA_ROOT`:
+
+```bash
+INTEL_FPGA_ROOT=/opt/intelFPGA_lite/19.1 bash tooling/build_and_deploy_u64.sh
+```
+
+Nothing is written to flash; a power cycle returns to the flashed firmware. To flash
+an Ultimate 64 Elite without anyone at the keyboard, see
+[docs/u64-unattended-flash.md](docs/u64-unattended-flash.md).
+
+### C64 Ultimate and Ultimate 64 Elite II over JTAG
+
+Wire an FT232H or a USB-Blaster to the JTAG header first, as described in
+[docs/c64u-jtag.md](docs/c64u-jtag.md). Then:
+
+```bash
+tooling/u64ii_jtag.sh probe                  # identify the board; changes nothing
+./build-tool --jtag c64u                     # build ultimate.bin and run it from RAM
+./build-tool --jtag c64u --jtag-fpga warm    # keep the FPGA image, restart only the CPU
+./build-tool --jtag-monitor c64u             # show the application's console
+```
+
+### Try an upstream pull request
+
+`build-tool` applies the pull request in a throwaway worktree, so your checkout stays
+as it is:
+
+```bash
+./build-tool --apply-pr 705 --pr-base upstream/master --jtag c64u
+```
+
+### Build another firmware tree
+
+Another tree with the same layout, for example a C64 Ultimate firmware tree:
+
+```bash
+./build-tool --repo-dir ../other-tree c64u
+```
+
+## Device settings
+
+Deploy and verification steps read the device from the environment, or from
+`.build-tool.env` in the checkout (copy `.build-tool.env.example`). A step whose
+setting is missing is skipped, not failed.
+
+| Variable | Used by | When unset |
+|---|---|---|
+| `DEPLOY_HOST` | `build`, FTP deploy | The step is skipped and reported as `SKIPPED` |
+| `DEPLOY_PATH` | `build`, FTP deploy | `/Usb1/firmware/u64/custom` |
+| `U64_VERIFY_HOST` | REST check after a u64 deploy | Skipped with a warning |
+| `U64II_VERIFY_HOST` | REST check after a u64ii deploy | Skipped with a warning |
+| `U64II_JTAG_URL` | C64 Ultimate JTAG cable: an FT232H URL, or `blaster` | `ftdi://ftdi:232h/1` |
+| `INTEL_FPGA_ROOT` | Ultimate 64 JTAG deploy and monitor | Searched under `~/intelFPGA_lite`, `~/altera_lite`, `/opt/...` |
+
+```bash
+export DEPLOY_HOST=my-u64            # hostname or IP
 export U64_VERIFY_HOST=my-u64
 ./build
 ```
 
-`build-tool` also takes these per invocation:
+Or per invocation:
 
 ```bash
-./build-tool --deploy-only -d u64 --deploy-host <device-hostname>
-./build-tool u64ii -d u64ii --deploy-host <device-ip> --verify-host <device-ip>
+./build-tool --deploy-only -d u64 --deploy-host my-u64
+./build-tool u64ii -d u64ii --deploy-host 192.168.1.64 --verify-host 192.168.1.64
 ```
 
-There are no credentials to configure. The Ultimate's FTP server accepts anonymous
-logins, which is why the deploy defaults are user `anonymous` with an empty password.
+There are no credentials to set. The Ultimate's FTP server accepts anonymous logins.
 
-## Notes on individual targets
+## Troubleshooting
 
-### u2pl cannot be built end to end without Lattice Diamond
+### `u2pl` fails at the FPGA step
 
-The full `u2pl` target runs `target/fpga/u2plus_ecp5`, which invokes `diamondc`.
-Diamond is proprietary and is not present in any of the build images, so the full
-target always fails at the FPGA step.
-
-The working path is `-s` (`--sw-only`), which maps to the `u2pl_swonly` make target.
-That embeds an existing ECP5 bitstream instead of synthesising one. The bitstream is
-gitignored and never in the upstream repository, so it has to be supplied at:
-
-```
-target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
-```
-
-Take it from a CI `factory_package_u2pl_*` artifact:
+The full `u2pl` target runs Lattice Diamond (`diamondc`), which is proprietary and is
+in no build image. Build software only with `-s` instead. That embeds an existing
+ECP5 bitstream, which you take from an upstream CI artifact:
 
 ```bash
 gh run download <RUN_ID> --repo GideonZ/1541ultimate \
     -n factory_package_u2pl_<version> -D /tmp/u2pl
 cp /tmp/u2pl/target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit \
    target/fpga/u2plus_ecp5/impl1/
+./build-tool -s u2pl
 ```
 
-`./build-tool -s u2pl --check-support` reports u2pl as supported once that file is in
-place. Without it the build fails late, in the updater step, with
+Without the bitstream the build fails late, in the updater step, with
 `No rule to make target '.../u2p_ecp5_impl1.bit'`.
 
-### The RISC-V toolchain
+### A RISC-V build fails
 
 Upstream CI builds the RISC-V targets on a self-hosted runner whose image differs
-from `ghcr.io/gideonz/riscv:latest`. The image `build-tool` prepares from that base
-builds `u64ii` from upstream master; the `upstream` job in
-`.github/workflows/test.yml` checks this every night. Before treating a RISC-V
-build failure as a regression, build the same target from a clean checkout and
-compare.
+from `ghcr.io/gideonz/riscv:latest`. The image `build-tool` prepares builds `u64ii`
+from upstream master; CI checks this every night. Before you treat a failure as a
+regression, build the same target from a clean checkout and compare.
 
-To build the RISC-V targets with the toolchain upstream CI uses, place a `riscv32-unknown-elf` GCC
-10.2.0 at `riscv/` inside the build tools directory (`--build-tools-dir`), so that
-`<build tools>/riscv/bin/riscv32-unknown-elf-g++` exists. `build-tool` then puts it
-ahead of the image's toolchain for u2, u2pl and u64ii, and stops if its version or
-checksum is not the pinned CI build. Without that directory the image's toolchain is
-used, and no build tools directory is needed for these targets.
+To use the exact toolchain upstream CI uses:
+1. Place a `riscv32-unknown-elf` GCC 10.2.0 at `riscv/` inside a build tools
+   directory, so that `<dir>/riscv/bin/riscv32-unknown-elf-g++` exists.
+2. Pass that directory with `--build-tools-dir <dir>`.
 
-`BUILD_TOOL_ALLOW_PARTIAL=1` lets a multi-target run continue past one failing target
-instead of stopping at the first.
+`build-tool` then puts it ahead of the image's toolchain for `u2`, `u2pl` and `u64ii`.
+It stops if the version or checksum is not the pinned CI build.
 
-### ESP-IDF
+### No ESP-IDF
 
-The full `u64` and `u64ii` targets depend on ESP32 firmware (`esp32_raw_u64` and
-`esp32_u64ctrl`). Without an ESP-IDF installation, use the upstream make targets that
-skip that step:
+The full `u64` and `u64ii` targets build ESP32 firmware too. Without an ESP-IDF
+installation, use the upstream make targets that skip it. Both still produce the
+application binary the deploy steps need:
 
 ```bash
 make u64_no_esp
 make u64ii_no_esp
 ```
 
-Both still produce the application binary the deploy steps need.
+### `make u64_swapply`
 
-## Patches
-
-`patches/0001-add-u64_swapply-make-target.patch` adds a `u64_swapply` target to the
-upstream Makefile, mirroring the existing `u2plus_swapply`: it builds the U64
-application and then downloads it over JTAG in one step.
+`patches/0001-add-u64_swapply-make-target.patch` adds a `u64_swapply` make target,
+which builds the Ultimate 64 application and runs it over JTAG in one step. It
+changes the tracked `Makefile`, so revert it before you push a branch upstream:
 
 ```bash
-cd 1541ultimate
-git apply ../1541ultimate-tools/patches/0001-add-u64_swapply-make-target.patch
-make u64_swapply
+git -C "$ULTIMATE" apply "$PWD/patches/0001-add-u64_swapply-make-target.patch"   # from this repository
+make -C "$ULTIMATE" u64_swapply
+git -C "$ULTIMATE" checkout Makefile                                               # when done
 ```
 
-This is a modification to a tracked file, so revert it with `git checkout Makefile`
-before pushing a branch upstream.
+## Documentation
 
-## Tests
+- [docs/c64u-jtag.md](docs/c64u-jtag.md): JTAG on the C64 Ultimate and Ultimate 64
+  Elite II. Covers wiring, commands, gdb, recovery and pull requests.
+- [docs/u64-jtag-deploy.md](docs/u64-jtag-deploy.md): what the Ultimate 64 JTAG deploy
+  does, and what it deliberately does not do.
+- [docs/u64-unattended-flash.md](docs/u64-unattended-flash.md): flashing an Ultimate
+  64 Elite unattended.
+- [docs/vivado-install.md](docs/vivado-install.md): the unattended Vivado install.
 
-The host tests need only Python 3 and bash. The FT232H, the USB-Blaster, the FPGA and
-the device are simulated, so they run without hardware. With pyftdi installed, one more
-test checks the MPSSE opcodes against pyftdi's own table:
+## Development
+
+### Tests
+
+The host tests need only Python 3, git and bash. The cables, the FPGA and the device
+are simulated, so no hardware is needed:
 
 ```bash
 python3 -m unittest discover -s tooling -p 'test_*.py'
 python3 -m unittest discover -s vivado -p 'test_*.py'
+python3 -m unittest discover -s tests -p 'test_install.py'
 bash tooling/test_apply_pr.sh
 ```
 
-`.github/workflows/test.yml` runs them, and a `bash -n` syntax check of every shell
-script, on each push to `main`, on every pull request and every night. It measures
-coverage with coverage.py, fails below 98%, and publishes the result to Codecov.
-`.coveragerc` holds the settings, so the same measurement runs locally:
+With pyftdi installed, one more test checks the MPSSE opcodes against pyftdi's own
+table.
+
+To measure coverage with the settings in `.coveragerc`:
 
 ```bash
 python3 -m coverage run -m unittest discover -s tooling -p 'test_*.py'
@@ -355,17 +345,46 @@ python3 -m coverage run -m unittest discover -s vivado -p 'test_*.py'
 python3 -m coverage combine && python3 -m coverage report
 ```
 
-`tests/upstream/` checks the tools against a 1541ultimate checkout: the firmware
-facts the tools carry (user chain registers, bitstreams, boot magic, cache size,
-FreeRTOS trap frame), the install steps of this README run as written, and, after a
-`build-tool u64ii`, the gdb server's FreeRTOS offsets against the ELF's debug
-information and the unwinder against its disassembly. The CI job `upstream` clones
-GideonZ/1541ultimate and builds `u64ii` for this. Locally:
+`tests/upstream/` checks the tools against a real 1541ultimate checkout:
+- **Firmware facts:** the constants the tools carry, such as user chain registers,
+  bitstreams, boot magic, cache size and FreeRTOS trap frame, against the firmware
+  sources.
+- **Installation:** this README's development install, run as written.
+- **A built application:** after `build-tool u64ii`, the gdb server's FreeRTOS
+  offsets against the ELF's debug information, and the unwinder against its
+  disassembly. This needs a RISC-V objdump, such as `riscv64-unknown-elf-objdump`
+  from the `binutils-riscv64-unknown-elf` package.
 
 ```bash
 ULTIMATE_REPO_DIR=../1541ultimate python3 -m unittest discover -s tests/upstream -p 'test_*.py'
 ```
 
 Without `ULTIMATE_REPO_DIR`, or without a `u64ii` build, those tests are skipped.
-`tests/upstream/test_build.py` also needs a RISC-V objdump, such as
-`riscv64-unknown-elf-objdump` from the `binutils-riscv64-unknown-elf` package.
+
+### Continuous integration
+
+`.github/workflows/test.yml` runs on every push to `main`, on every pull request, and
+every night:
+
+- **`host-tests`:**
+  - Runs every host test under coverage, fails below 98%, and publishes the result
+    to Codecov.
+  - Also runs the `apply_pr.sh` and installer tests, and a `bash -n` check of every
+    shell script.
+- **`upstream`:** clones GideonZ/1541ultimate, installs the tools as this README
+  says, builds `u64ii` with `build-tool`, and runs `tests/upstream/`.
+
+### Making a release
+
+1. Set the new version in `VERSION` and merge that change to `main`.
+2. Tag the merge commit and publish the release:
+
+```bash
+VERSION="$(cat VERSION)"
+git tag -a "v${VERSION}" -m "1541ultimate-tools ${VERSION}"
+git push origin "v${VERSION}"
+gh release create "v${VERSION}" --title "1541ultimate-tools ${VERSION}" --notes-file <notes>
+```
+
+The release's source archive is what the install commands above download.
+`.gitattributes` keeps the logo out of it.
