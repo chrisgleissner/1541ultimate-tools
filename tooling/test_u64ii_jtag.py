@@ -328,10 +328,79 @@ class FakeFtdi:
         self.frozen = freeze
 
 
+class FakeBlaster:
+    """Executes USB-Blaster byte streams against an ArtixModel.
+
+    Pin-level bytes set TMS and TDI and clock the TAP on a rising TCK, sampling
+    TDO on that edge when READ is set. A shift-mode header clocks its data
+    bytes LSB first with TMS low. Like the CPLD, it keeps the pin levels a
+    shift leaves behind.
+    """
+
+    def __init__(self, model):
+        self.model = model
+        self.tck = 0
+        self.tms = 1
+        self.out = bytearray()
+        self.closed = False
+        self.pins = None
+        self.fail_in_reset = False
+        self.packets = []
+
+    def write_data(self, data):
+        if self.fail_in_reset and self.model.chain.write_vector & jt.OUTPUT_CPU_RESET:
+            raise OSError("USB device disconnected")
+        data, i = bytes(data), 0
+        self.packets.append(len(data))
+        while i < len(data):
+            op = data[i]
+            if op & jt.BL_SHIFT:
+                n = op & 0x3F
+                for byte in data[i + 1:i + 1 + n]:
+                    got = 0
+                    for b in range(8):
+                        got |= self.model.rising(0, (byte >> b) & 1) << b
+                    if op & jt.BL_READ:
+                        self.out.append(got)
+                self.tms = 0
+                i += 1 + n
+            else:
+                tms, tdi = (op >> 1) & 1, (op >> 4) & 1
+                if (op & jt.BL_TCK) and not self.tck:
+                    sampled = self.model.rising(tms, tdi)
+                    if op & jt.BL_READ:
+                        self.out.append(sampled)
+                elif op & jt.BL_READ:
+                    self.out.append(self.model.presented)
+                self.tck, self.tms = op & jt.BL_TCK, tms
+                self.pins = op
+                i += 1
+        return len(data)
+
+    def read_data_bytes(self, size, attempt=1):
+        data, self.out = self.out[:size], self.out[size:]
+        return data
+
+    def close(self, freeze=False):
+        self.closed = True
+
+
+CABLE = "ft232h"
+
+
+def cable(model):
+    """The simulated cable the running test class asks for, and its device."""
+    if CABLE == "blaster":
+        ftdi = FakeBlaster(model)
+        return jt.Blaster(ftdi), ftdi
+    ftdi = FakeFtdi(model)
+    return jt.Mpsse(ftdi), ftdi
+
+
 def board(model=None):
     model = model or ArtixModel()
-    ftdi = FakeFtdi(model)
-    return jt.Board(mpsse=jt.Mpsse(ftdi)), model, ftdi
+    driver, ftdi = cable(model)
+    return jt.Board(mpsse=driver), model, ftdi
 
 
 class TapTest(unittest.TestCase):
@@ -546,13 +615,13 @@ class FlowTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile() as handle, \
                 contextlib.redirect_stdout(io.StringIO()):
             rc = jt.main(["dump", "0x30002", "4", "-o", handle.name],
-                         mpsse=jt.Mpsse(FakeFtdi(model)))
+                         mpsse=cable(model)[0])
             self.assertEqual(rc, 0)
             self.assertEqual(open(handle.name, "rb").read(), b"\x02\x03\x04\x05")
 
     def test_main_probe(self):
         model = ArtixModel()
-        rc = jt.main(["probe"], mpsse=jt.Mpsse(FakeFtdi(model)))
+        rc = jt.main(["probe"], mpsse=cable(model)[0])
         self.assertEqual(rc, 0)
 
 
@@ -1359,6 +1428,118 @@ class CommandLineTest(unittest.TestCase):
             runpy.run_path(jt.__file__, run_name="__main__")
         self.assertEqual(caught.exception.code, 0)
         self.assertIn("an Ultimate design is running", out.getvalue())
+
+
+# ---------------------------------------------------------------------------
+# The same tap, chain and flow tests through a USB-Blaster
+# ---------------------------------------------------------------------------
+class OnBlaster:
+    def setUp(self):
+        global CABLE
+        self.cable, CABLE = CABLE, "blaster"
+
+    def tearDown(self):
+        global CABLE
+        CABLE = self.cable
+
+
+class BlasterTapTest(OnBlaster, TapTest):
+    def test_release_leaves_pins_inputs(self):
+        b, _, ftdi = board()
+        b.close()
+        self.assertEqual(ftdi.pins, 0)          # outputs disabled
+        self.assertTrue(ftdi.closed)
+
+
+class BlasterUserChainTest(OnBlaster, UserChainTest):
+    pass
+
+
+class BlasterFlowTest(OnBlaster, FlowTest):
+    pass
+
+
+class BlasterTest(unittest.TestCase):
+    def test_release_on_a_dead_link_keeps_the_original_error(self):
+        # As Mpsse.release(): a cable that is gone must not replace the error
+        # that ended the session, and the port must still be closed.
+        b, _, ftdi = board_on_blaster()
+        b.identify()
+        with self.assertRaises(jt.JtagError):
+            with b:
+                ftdi.fail_in_reset = True
+                ftdi.model.chain.write_vector = jt.OUTPUT_CPU_RESET
+                raise jt.JtagError("the session failed")
+        self.assertTrue(ftdi.closed)
+
+    def test_packets_fit_one_usb_packet(self):
+        b, model, ftdi = board_on_blaster()
+        b.identify()
+        b.run_application(bytes(range(256)) * 40)
+        self.assertLessEqual(max(ftdi.packets), jt.BL_PACKET)
+
+    def open_with(self, attached, *urls):
+        """Open each URL with these (serial, bus, address) Blasters attached."""
+        opened = []
+        saved = jt.Blaster.open, jt.Mpsse.open, jt.find_blasters
+        try:
+            jt.Blaster.open = classmethod(lambda cls, url, f: opened.append(("blaster", url)))
+            jt.Mpsse.open = classmethod(lambda cls, url, f: opened.append(("ft232h", url)))
+            jt.find_blasters = lambda: list(attached)
+            for url in urls:
+                jt.open_cable(url, 3e6)
+        finally:
+            jt.Blaster.open, jt.Mpsse.open, jt.find_blasters = saved
+        return opened
+
+    def test_url_selects_the_cable(self):
+        opened = self.open_with([("8aB75VK4", 1, 5)], "blaster",
+                                "ftdi://altera:usbblaster/2", "ftdi://ftdi:232h/1")
+        self.assertEqual(opened, [("blaster", "ftdi://altera:usbblaster:8aB75VK4/1"),
+                                  ("blaster", "ftdi://altera:usbblaster/2"),
+                                  ("ft232h", "ftdi://ftdi:232h/1")])
+
+    def test_plain_blaster_refuses_when_several_are_attached(self):
+        with self.assertRaises(jt.JtagError) as ctx:
+            self.open_with([("A1", 1, 4), ("B2", 1, 7)], "blaster")
+        self.assertIn("blaster:A1, blaster:B2", str(ctx.exception))
+
+    def test_plain_blaster_refuses_when_none_is_attached(self):
+        with self.assertRaises(jt.JtagError):
+            self.open_with([], "blaster")
+
+    def test_serial_picks_one_of_several(self):
+        opened = self.open_with([("A1", 1, 4), ("B2", 1, 7)], "blaster:B2")
+        self.assertEqual(opened, [("blaster", "ftdi://altera:usbblaster:B2/1")])
+
+    def test_unknown_serial_lists_the_attached_ones(self):
+        with self.assertRaises(jt.JtagError) as ctx:
+            self.open_with([("A1", 1, 4)], "blaster:B2")
+        self.assertIn("blaster:A1", str(ctx.exception))
+
+    def test_clashing_serials_need_bus_and_address(self):
+        with self.assertRaises(jt.JtagError) as ctx:
+            self.open_with([("SAME", 1, 4), ("SAME", 2, 26)], "blaster:SAME")
+        # pyftdi reads bus and address as hex
+        self.assertIn("blaster:1:4, blaster:2:1a", str(ctx.exception))
+        opened = self.open_with([("SAME", 1, 4), ("SAME", 2, 26)], "blaster:2:1a")
+        self.assertEqual(opened, [("blaster", "ftdi://altera:usbblaster:2:1a/1")])
+
+    def test_bypass_hint_names_frequency_only_for_the_ft232h(self):
+        for cable in ("ft232h", "blaster"):
+            model = ArtixModel()
+            b = (jt.Board(mpsse=jt.Blaster(FakeBlaster(model))) if cable == "blaster"
+                 else jt.Board(mpsse=jt.Mpsse(FakeFtdi(model))))
+            b.tap.bypass_delay = lambda: 0
+            with self.assertRaises(jt.JtagError) as ctx:
+                b.identify()
+            self.assertEqual("--frequency" in str(ctx.exception), cable == "ft232h")
+
+
+def board_on_blaster():
+    model = ArtixModel()
+    ftdi = FakeBlaster(model)
+    return jt.Board(mpsse=jt.Blaster(ftdi)), model, ftdi
 
 
 if __name__ == "__main__":
