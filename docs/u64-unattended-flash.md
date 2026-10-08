@@ -48,9 +48,13 @@ controller owns the power rails there, and they can switch on by themselves.
    function's entry (`r2` = answer, PC = `ra`), so the popup is never drawn.
 6. **Stays attached until the updater has switched the machine off,** then checks
    that ping is silent and the FPGA has left the JTAG chain.
-7. **Presses the power button** with `--power-button-cmd` (one retry), or asks a
-   person, and waits for `/v1/info`. `--expect-commit` fails the run when the
-   reported `git_commit_hash` differs.
+7. **Presses the power button** with `--power-button-cmd`, or asks a person, and
+   waits for `/v1/info`. The command is run a second time only if ping and the
+   JTAG chain still show the machine off; a machine that is on but does not
+   answer REST fails the run instead of being pressed again.
+   `--expect-commit` fails the run when the reported `git_commit_hash` differs.
+   Either hash may be abbreviated, because `git rev-parse --short` does not
+   always give the same length: the shorter must be a prefix of the longer.
 
 ## The questions and their answers
 
@@ -75,8 +79,11 @@ unsafe; a wrong YES to the first question erases the flash disk.
 Any popup not in the table, or offering different buttons, is left unanswered:
 the run stops with exit code 2 and the CPU stays halted at the entry of
 `popup()`. Nothing destructive has happened at that point if the popup came
-before "About to update. Continue?". After extending the table, `--resume`
-attaches to the running gdb-server and carries on from there.
+before "About to update. Continue?". The script leaves `nios2-gdb-server`
+running and logs its PID. After extending the table, `--resume` attaches to
+that gdb-server and carries on from there; stop the server by its PID once the
+resumed run has finished. A run without `--resume` refuses to start while
+another process listens on the gdb-server port.
 
 ## Running it
 

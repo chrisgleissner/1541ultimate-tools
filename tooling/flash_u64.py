@@ -24,6 +24,7 @@ import glob
 import json
 import os
 import re
+import select
 import socket
 import struct
 import subprocess
@@ -142,7 +143,8 @@ def elf_image(elf):
         result = run(["nios2-elf-objcopy", "-O", "binary", elf, out.name])
         if result.returncode:
             raise FlashError(f"nios2-elf-objcopy {elf}: {result.stderr.strip()}")
-        return open(out.name, "rb").read()
+        with open(out.name, "rb") as handle:
+            return handle.read()
 
 
 def find_symbols(nm_output):
@@ -200,9 +202,12 @@ def answer_for(message, flags):
 
 def mi_value(result_record):
     """MI renders registers as 0x..., pointers as "(type) 0x... <symbol>"."""
-    value = re.search(r'value="([^"]*)"', result_record).group(1)
-    number = re.search(r'(-?0x[0-9a-fA-F]+|-?\d+)\s*(?:<[^>]*>)?\s*$', value).group(1)
-    return int(number, 0) & 0xffffffff
+    value = re.search(r'value="([^"]*)"', result_record)
+    # The symbol may be a template, so <...> can nest.
+    number = value and re.search(r'(-?0x[0-9a-fA-F]+|-?\d+)\s*(?:<.*>)?\s*$', value.group(1))
+    if not number:
+        raise FlashError(f"gdb returned no number: {result_record}")
+    return int(number.group(1), 0) & 0xffffffff
 
 
 class Gdb:
@@ -212,19 +217,32 @@ class Gdb:
         self.proc = subprocess.Popen(["nios2-elf-gdb", "--interpreter=mi2", "-q"], env=ENV,
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True)
-        self.read_until(lambda line: line.startswith("(gdb)"), 30)
+        self.pending = b""
+        try:
+            self.read_until(lambda line: line.startswith("(gdb)"), 30)
+        except FlashError:
+            self.close()
+            raise
 
     def read_until(self, done, timeout):
+        # select() rather than readline(), which would block past the deadline
+        # while gdb is silent.
         deadline = time.monotonic() + timeout
+        fd = self.proc.stdout.fileno()
         lines = []
-        while time.monotonic() < deadline:
-            line = self.proc.stdout.readline()
-            if not line:
-                raise FlashError("gdb exited")
-            lines.append(line.rstrip("\n"))
+        while True:
+            while b"\n" not in self.pending:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+                    raise FlashError(f"gdb timed out: {lines[-3:]}")
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    raise FlashError("gdb exited")
+                self.pending += chunk
+            line, self.pending = self.pending.split(b"\n", 1)
+            lines.append(line.decode("latin-1").rstrip("\r"))
             if done(lines[-1]):
                 return lines
-        raise FlashError(f"gdb timed out: {lines[-3:]}")
 
     def send(self, command):
         self.proc.stdin.write(command + "\n")
@@ -250,6 +268,23 @@ class Gdb:
 
     def wait_stop(self, timeout):
         return self.read_until(lambda line: line.startswith("*stopped"), timeout)[-1]
+
+    def close(self):
+        """End of input stops gdb the same way as this script exiting would."""
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
+        reap(self.proc)
+        self.proc.stdout.close()
+
+
+def reap(proc):
+    try:
+        proc.wait(10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
 
 
 def answer_popups(gdb, addrs, stop):
@@ -344,16 +379,29 @@ def fpga_on_chain():
     return FPGA_ID in run(["jtagconfig"]).stdout
 
 
+def port_open(port):
+    try:
+        socket.create_connection(("127.0.0.1", port), 1).close()
+        return True
+    except OSError:
+        return False
+
+
 def start_gdb_server(port):
+    # A server already on the port would take gdb's connection instead of ours.
+    if port_open(port):
+        raise FlashError(f"port {port} is already in use; stop the nios2-gdb-server "
+                         "left by an earlier run, or use --resume")
     server = subprocess.Popen(["nios2-gdb-server", "--tcpport", str(port), "--tcppersist"], env=ENV,
                               stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     for _ in range(60):
-        try:
-            socket.create_connection(("127.0.0.1", port), 1).close()
+        if port_open(port):
             return server
-        except OSError:
-            time.sleep(0.5)
+        if server.poll() is not None:
+            raise FlashError(f"nios2-gdb-server exited with {server.returncode}")
+        time.sleep(0.5)
     server.kill()
+    server.wait()
     raise FlashError("nios2-gdb-server did not start")
 
 
@@ -371,6 +419,9 @@ def power_on(args):
     attempts = 2 if args.power_button_cmd else 1
     for attempt in range(1, attempts + 1):
         if args.power_button_cmd:
+            # A press on a running machine opens the menu or resets the C64.
+            if attempt > 1 and (pingable(args.host) or fpga_on_chain()):
+                raise FlashError("the machine is on but /v1/info does not answer")
             log(f"pressing the power button ({attempt}/{attempts})")
             result = subprocess.run(args.power_button_cmd, shell=True)
             if result.returncode:
@@ -388,7 +439,10 @@ def flash(args):
     with open(args.u64, "rb") as handle:
         load, entry, image = parse_u64(handle.read())
     log(f"{args.u64}: load {load:#x}, entry {entry:#x}, {len(image)} bytes")
-    symbols = find_symbols(run(["nios2-elf-nm", "-C", "-S", args.sym_elf]).stdout)
+    result = run(["nios2-elf-nm", "-C", "-S", args.sym_elf])
+    if result.returncode:
+        raise FlashError(f"nios2-elf-nm {args.sym_elf}: {result.stderr.strip()}")
+    symbols = find_symbols(result.stdout)
     check_code(image, elf_image(args.sym_elf), load, symbols)
     addrs = {key: addr for key, (addr, _) in symbols.items()}
     log("breakpoints " + ", ".join(f"{k} {v:#x}" for k, v in addrs.items()))
@@ -397,13 +451,15 @@ def flash(args):
         log(f"before: {before.get('firmware_version')} {before.get('git_commit_hash')} "
             f"FPGA {before.get('fpga_version')}")
 
-    server = None
+    server = gdb = None
+    keep_server = False
     if not args.resume:
         if not fpga_on_chain():
             raise FlashError("no U64 FPGA on the JTAG chain; is the machine on?")
-        elf = wrap_elf(image, load, entry, tempfile.mkdtemp(prefix="flash_u64_"))
-        log("loading the updater over JTAG (about 160 s)")
-        result = run(["nios2-download", elf])
+        with tempfile.TemporaryDirectory(prefix="flash_u64_") as workdir:
+            elf = wrap_elf(image, load, entry, workdir)
+            log("loading the updater over JTAG (about 160 s)")
+            result = run(["nios2-download", elf])
         if result.returncode or "Verified OK" not in result.stdout:
             raise FlashError("nios2-download: " + (result.stdout + result.stderr)[-400:])
         server = start_gdb_server(args.port)
@@ -433,9 +489,18 @@ def flash(args):
         # and quitting gdb early could halt the CPU inside turn_off().
         time.sleep(25)
         gdb.send("-gdb-exit")
+    except FlashError as error:
+        # An unanswered popup leaves the CPU halted in popup() for --resume.
+        keep_server = error.code == 2
+        raise
     finally:
-        if server:
+        if gdb:
+            gdb.close()
+        if server and keep_server:
+            log(f"nios2-gdb-server (pid {server.pid}) is left running for --resume")
+        elif server:
             server.terminate()
+            reap(server)
 
     time.sleep(5)
     if pingable(args.host) or fpga_on_chain():
@@ -446,7 +511,10 @@ def flash(args):
     log(f"after: {info.get('firmware_version')} {info.get('git_commit_hash')} "
         f"FPGA {info.get('fpga_version')} errors {info.get('errors')}")
     log(f"answers: {answered}")
-    if args.expect_commit and info.get("git_commit_hash") != args.expect_commit:
+    # Either hash may be abbreviated, and `git rev-parse --short` varies in length.
+    reported = info.get("git_commit_hash") or ""
+    if args.expect_commit and not (reported and (reported.startswith(args.expect_commit)
+                                                 or args.expect_commit.startswith(reported))):
         raise FlashError(f"expected commit {args.expect_commit}, the device reports "
                          f"{info.get('git_commit_hash')}")
     log("done")
@@ -474,6 +542,9 @@ def main(argv=None):
     except FlashError as error:
         log(f"FAILED: {error}")
         return error.code
+    except OSError as error:
+        log(f"FAILED: {error}")
+        return 1
     return 0
 
 
