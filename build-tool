@@ -222,7 +222,8 @@ ${COLOR_BOLD}JTAG OPTIONS${COLOR_RESET}
       --jtag TARGET          Build the application only and run it from RAM over
                              JTAG (volatile; flash is never written).
                              u64: USB-Blaster + nios2-download.
-                             u64ii/c64u: FT232H + the FPGA's user JTAG chain
+                             u64ii/c64u: FT232H or USB-Blaster + the FPGA's
+                             user JTAG chain
                              (tooling/u64ii_jtag.sh; see docs/c64u-jtag.md).
       --jtag-fpga BIT        u64ii: bitstream configured before the application:
                              'auto' (default, external/u64e2_*.bit by IDCODE),
@@ -230,7 +231,8 @@ ${COLOR_BOLD}JTAG OPTIONS${COLOR_RESET}
                              and restart only the CPU (about 7 s faster)
       --jtag-monitor TARGET  Read JTAG terminal output (u64ii: the CPU's UART)
       --jtag-monitor-secs N  Capture JTAG output for N seconds (default: 5)
-      --jtag-url URL         FT232H URL for u64ii (default: ${DEFAULT_JTAG_URL})
+      --jtag-url URL         FT232H URL for u64ii, or 'blaster' for a USB-Blaster
+                             (default: ${DEFAULT_JTAG_URL})
 
 ${COLOR_BOLD}UART OPTIONS${COLOR_RESET}
       --uart-monitor TARGET  Read UART serial output for a target
