@@ -1,0 +1,13 @@
+# Coverage of the host tests (CI job host-tests).
+[run]
+branch = True
+parallel = True
+source = tooling, vivado
+omit = */test_*.py
+# auth_token.py is tested as a subprocess, as it runs for real.
+patch = subprocess
+disable_warnings = no-data-collected
+
+[report]
+show_missing = True
+skip_covered = False

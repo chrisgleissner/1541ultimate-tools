@@ -25,9 +25,14 @@ FAKE_XSETUP = textwrap.dedent("""\
     import getpass, os, sys
     behaviour = os.environ.get("BEHAVIOUR", "ok")
     token = os.path.expanduser("~/.Xilinx/wi_authentication_key")
+    if behaviour == "hang":
+        import time
+        time.sleep(60)
     while True:
         email = input("E-mail Address:")
         password = getpass.getpass("Password:")
+        if behaviour == "repass":
+            password = getpass.getpass("Password:")
         if behaviour == "reject":
             print("ERROR - Invalid credentials")
             continue
@@ -69,6 +74,8 @@ class AuthTokenTest(unittest.TestCase):
 
     def run_tool(self, *args, extra_env=None):
         env = {"HOME": self.home, "PATH": os.environ["PATH"]}
+        # Lets coverage follow the tool into its subprocess; unset otherwise.
+        env.update({k: v for k, v in os.environ.items() if k.startswith("COVERAGE_")})
         env.update(extra_env or {})
         return subprocess.run(
             [sys.executable, SCRIPT, "--xsetup", self.xsetup,
@@ -140,6 +147,47 @@ class AuthTokenTest(unittest.TestCase):
         r = self.run_tool("--ensure", extra_env={"BEHAVIOUR": "nowrite"})
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("no new token", r.stderr)
+
+    def test_password_asked_again_is_a_rejection(self):
+        self.write_env(f"AMD_EMAIL={EMAIL}\nAMD_PASSWORD=wrong\n")
+        r = self.run_tool(extra_env={"BEHAVIOUR": "repass"})
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("rejected", r.stderr)
+        self.assertNotIn("wrong", r.stdout + r.stderr)
+
+    def test_silent_installer_times_out(self):
+        self.write_env(f"AMD_EMAIL={EMAIL}\nAMD_PASSWORD=x\n")
+        start = time.time()
+        env = {"HOME": self.home, "PATH": os.environ["PATH"], "BEHAVIOUR": "hang"}
+        env.update({k: v for k, v in os.environ.items() if k.startswith("COVERAGE_")})
+        r = subprocess.run(
+            [sys.executable, SCRIPT, "--xsetup", self.xsetup, "--env-file", self.env_file,
+             "--timeout", "2"], env=env, capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("timed out after 2 s", r.stderr)
+        self.assertLess(time.time() - start, 30)
+
+    def test_missing_installer_is_named(self):
+        self.write_env(f"AMD_EMAIL={EMAIL}\nAMD_PASSWORD=x\n")
+        os.remove(self.xsetup)
+        r = self.run_tool()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("not found; extract the installer first", r.stderr)
+
+    def test_empty_token_counts_as_missing(self):
+        self.write_env(f"AMD_EMAIL={EMAIL}\nAMD_PASSWORD=x\n")
+        self.write_token(age_s=60)
+        os.chmod(self.token, 0o600)
+        open(self.token, "w").close()
+        r = self.run_tool("--ensure")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.received(), [EMAIL, "x"])
+
+    def test_comments_and_blank_lines_in_the_env_file(self):
+        self.write_env(f"# AMD account\n\n  \nnot an assignment\nAMD_EMAIL={EMAIL}\nAMD_PASSWORD=x\n")
+        r = self.run_tool()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.received(), [EMAIL, "x"])
 
 
 if __name__ == "__main__":
