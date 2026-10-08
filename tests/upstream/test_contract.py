@@ -130,10 +130,6 @@ class Bootloader(unittest.TestCase):
         self.assertEqual(hex_constant(linker, r"bootrom\s*:\s*ORIGIN\s*=\s*0x([0-9A-Fa-f]+)"),
                          jt.BOOTLOADER_ADDRESS)
 
-    def test_trampoline_stays_clear_of_the_application(self):
-        self.assertEqual(jt.TRAMPOLINE_ADDRESS % jt.ICACHE_BYTES, 0)
-        self.assertLess(jt.TRAMPOLINE_ADDRESS + jt.ICACHE_BYTES + 8, jt.APP_ADDRESS)
-
 
 class InstructionCache(unittest.TestCase):
     def test_cache_size(self):

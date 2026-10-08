@@ -24,6 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 
@@ -49,8 +50,9 @@ def setUpModule():
 
 
 def tool(*names):
+    """The first of `names` found on PATH."""
     for name in names:
-        path = shutil.which(name) or shutil.which(os.path.expanduser(f"~/.local/bin/{name}"))
+        path = shutil.which(name)
         if path:
             return path
     return None
@@ -206,14 +208,10 @@ class Image(unittest.TestCase):
 
     def test_bin_is_the_loadable_image(self):
         objcopy = tool("riscv32-unknown-elf-objcopy", "riscv64-unknown-elf-objcopy", "objcopy")
-        out = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"u64ii-{os.getpid()}.bin")
-        try:
-            subprocess.run([objcopy, "-O", "binary", ELF, out], check=True, capture_output=True)
-            with open(out, "rb") as a, open(BIN, "rb") as b:
-                self.assertEqual(a.read(), b.read())
-        finally:
-            if os.path.exists(out):
-                os.remove(out)
+        with tempfile.NamedTemporaryFile(suffix=".bin") as out:
+            subprocess.run([objcopy, "-O", "binary", ELF, out.name], check=True, capture_output=True)
+            with open(BIN, "rb") as built:
+                self.assertEqual(out.read(), built.read())
 
     def test_bin_fits_below_the_io_space(self):
         self.assertLess(jt.APP_ADDRESS + os.path.getsize(BIN), gs.MEMORY_LIMIT)
@@ -312,17 +310,27 @@ class Unwinder(unittest.TestCase):
         self.assertGreater(checked, 1000)
         self.assertEqual(missed, [], f"{len(missed)} of {checked} functions")
 
-    def test_shrink_wrapped_function(self):
-        # vTaskDelay branches before it allocates its frame: the case gdb's
-        # own prologue analyser gives up on.
-        instructions = self.functions["vTaskDelay"]
-        size, alloc, saves = self.scan("vTaskDelay")
-        branch = next(a for a, t in instructions if re.match(r"^(beq|bne|beqz|bnez)\s", t))
-        self.assertGreater(alloc, branch)
-        self.assertGreater(size, 0)
-        self.assertIn("ra", saves)
-        self.assertLess(saves["ra"][0], size)
-
+    def test_shrink_wrapped_functions(self):
+        # Functions that branch before they allocate their frame: the case
+        # gdb's own prologue analyser gives up on, and the reason this
+        # unwinder exists. The firmware must still contain some, or the test
+        # above proves nothing about them.
+        wrapped = 0
+        for name, instructions in self.functions.items():
+            if not self.calls(name) or NO_C_FRAME.match(name):
+                continue
+            size, alloc, saves = self.scan(name)
+            if alloc is None:
+                continue
+            if any(re.match(r"^(beq|bne|blt|bge|bltu|bgeu|beqz|bnez|blez|bgez|bltz|bgtz)\s", t)
+                   for a, t in instructions if a < alloc):
+                wrapped += 1
+                with self.subTest(function=name):
+                    self.assertGreater(size, 0)
+                    self.assertIn("ra", saves)
+                    self.assertLess(saves["ra"][0], size)
+                    self.assertGreater(saves["ra"][1], alloc)
+        self.assertGreater(wrapped, 10)
 
 if __name__ == "__main__":
     unittest.main()

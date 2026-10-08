@@ -38,7 +38,18 @@ jobs:
         run: |
           python -m coverage combine
           python -m coverage report --fail-under=98
+          python -m coverage xml -o coverage.xml
           python -m coverage html -d coverage-html
+
+      # A pull request from a fork gets no secrets; Codecov then takes a
+      # tokenless upload, and a refused upload must not fail the fork's run.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: host-tests
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -83,16 +94,9 @@ jobs:
           python -m unittest -v tests/upstream/test_contract.py
           python -m unittest -v tests/upstream/test_overlay.py
 
+      # The README's own install and exclude blocks, run as written.
       - name: Install the tools as README.md describes
-        run: |
-          cd 1541ultimate
-          cp -r ../1541ultimate-tools/build \
-                ../1541ultimate-tools/build.cmd \
-                ../1541ultimate-tools/build-tool \
-                ../1541ultimate-tools/build-tool.d \
-                ../1541ultimate-tools/tooling \
-                ../1541ultimate-tools/.build-tool.env.example .
-          chmod +x build build-tool tooling/*.sh tooling/*.py
+        run: python 1541ultimate-tools/tests/upstream/readme.py "$GITHUB_WORKSPACE"
 
       - name: Build u64ii with build-tool
         working-directory: 1541ultimate

@@ -13,14 +13,17 @@ missing checkout is a failure instead.
 """
 
 import os
-import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOOLS = os.path.abspath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, HERE)
+import readme  # noqa: E402
+
+TOOLS = readme.TOOLS
 REPO = os.environ.get("ULTIMATE_REPO_DIR", "")
 REQUIRED = os.environ.get("UPSTREAM_REQUIRED") == "1"
 TARGETS = ("u2", "u2plus", "u2pl", "u64", "u64ii")
@@ -33,14 +36,6 @@ def setUpModule():
         raise unittest.SkipTest("ULTIMATE_REPO_DIR is not set")
 
 
-def readme_blocks():
-    """The bash blocks of the README's install and exclude sections."""
-    with open(os.path.join(TOOLS, "README.md")) as handle:
-        text = handle.read()
-    section = text[text.index("## Installing into a checkout"):text.index("## Prerequisites")]
-    return re.findall(r"```bash\n(.*?)```", section, re.S)
-
-
 class Overlay(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -49,27 +44,17 @@ class Overlay(unittest.TestCase):
         # The README works from a parent directory holding both checkouts.
         os.symlink(TOOLS, os.path.join(cls.tmp, "1541ultimate-tools"))
         subprocess.run(["git", "clone", "-q", "--shared", REPO, cls.checkout], check=True)
-        blocks = readme_blocks()
-        install = [b for b in blocks if "cp -r ../1541ultimate-tools/" in b]
-        exclude = [b for b in blocks if ".git/info/exclude" in b]
-        if len(install) != 1 or len(exclude) != 1:
-            raise AssertionError("README.md no longer has one install and one exclude block")
-        # The install block starts with the clone commands and `cd 1541ultimate`;
-        # run it from the line that changes into the checkout.
-        script = install[0]
-        script = script[script.index("cd 1541ultimate"):]
-        cls.install = subprocess.run(["bash", "-euc", script], cwd=cls.tmp,
-                                     capture_output=True, text=True)
-        # Like the install block, it starts with `cd 1541ultimate`.
-        cls.exclude = subprocess.run(["bash", "-euc", exclude[0]], cwd=cls.tmp,
-                                     capture_output=True, text=True)
+        install, exclude = readme.blocks()
+        cls.install = readme.run(install, cls.tmp)
+        cls.exclude = readme.run(exclude, cls.tmp)
 
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def run_tool(self, *args):
+    def run_tool(self, *args, env=None):
         return subprocess.run(["./build-tool", *args], cwd=self.checkout,
+                              env={**os.environ, **(env or {})},
                               capture_output=True, text=True, timeout=120)
 
     def test_readme_install_block_runs(self):
@@ -103,6 +88,15 @@ class Overlay(unittest.TestCase):
     def test_build_tool_refuses_an_unknown_target(self):
         result = self.run_tool("no-such-target")
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unknown target: no-such-target", result.stdout + result.stderr)
+
+    def test_build_tool_dry_run_prints_the_u64ii_build(self):
+        # Nothing runs: the commands a u64ii build would execute are printed.
+        result = self.run_tool("--dry-run", "--no-submodule-update", "u64ii",
+                               env={"BUILD_TOOL_ALLOW_PARTIAL": "1"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("make -j", result.stdout + result.stderr)
+        self.assertIn("u64ii", result.stdout + result.stderr)
 
     def test_jtag_tool_help_runs_in_the_overlay(self):
         result = subprocess.run(["python3", "tooling/u64ii_jtag.py", "--help"], cwd=self.checkout,
