@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The tests use only the standard library: the cables, the FPGA and the
+      # device are simulated, so no hardware or pyftdi is needed.
+      - name: Python tests (tooling)
+        run: python -m unittest discover -v -s tooling -p 'test_*.py'
+
+      - name: Python tests (vivado)
+        run: python -m unittest discover -v -s vivado -p 'test_*.py'
+
+      - name: apply_pr.sh tests
+        run: bash tooling/test_apply_pr.sh
+
+      - name: Shell syntax
+        run: |
+          for f in build build-tool build-tool.d/*.sh tooling/*.sh vivado/*.sh; do
+            bash -n "$f"
+          done
