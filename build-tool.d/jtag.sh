@@ -3,8 +3,8 @@
 #
 # The two board families are reached differently. The Ultimate 64 (Cyclone V,
 # Nios II) goes through a USB-Blaster and nios2-download. The Ultimate 64
-# Elite II and the C64 Ultimate (Artix-7, RISC-V) go through an FT232H and the
-# FPGA's user JTAG chain. Both deployments are volatile and load the
+# Elite II and the C64 Ultimate (Artix-7, RISC-V) go through an FT232H (or a
+# USB-Blaster) and the FPGA's user JTAG chain. Both deployments are volatile and load the
 # application built from $REPO_DIR; the helper scripts live beside build-tool.
 
 # _jtag_helper NAME — path of a tooling/ script, or fail the calling step

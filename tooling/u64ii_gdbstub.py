@@ -353,7 +353,7 @@ def main(argv=None) -> int:
     parser.add_argument("--elf", required=True, help="ELF of the running application")
     parser.add_argument("--port", type=int, default=3333)
     parser.add_argument("--allow-writes", action="store_true", help="let gdb write memory")
-    parser.add_argument("--url", default=None, help="pyftdi URL of the FT232H")
+    parser.add_argument("--url", default=None, help="pyftdi URL of the FT232H, or blaster")
     parser.add_argument("--frequency", type=float, default=None)
     args = parser.parse_args(argv)
 

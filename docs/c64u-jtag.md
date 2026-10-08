@@ -1,7 +1,7 @@
 # JTAG on the C64 Ultimate and Ultimate 64 Elite II
 
 `tooling/u64ii_jtag.sh` loads an FPGA image and an application into a C64 Ultimate or
-an Ultimate 64 Elite II over JTAG, through an FT232H. It also reads the application's
+an Ultimate 64 Elite II over JTAG, through an FT232H or a USB-Blaster. It also reads the application's
 console output and its memory. Everything it does is volatile. It never writes the
 SPI flash, and a power cycle returns the board to its flashed FPGA image and flashed
 application.
@@ -16,7 +16,7 @@ board families share firmware sources but not the parts that JTAG talks to.
 | FPGA | Intel Cyclone V | Xilinx Artix-7, XC7A50T or XC7A100T |
 | Application CPU | Nios II | RISC-V soft core |
 | Build target | `u64`, `update.u64` | `u64ii`, `update.ue2` (alias `c64u`) |
-| JTAG cable | USB-Blaster | FT232H, e.g. Adafruit FT232H |
+| JTAG cable | USB-Blaster | FT232H, e.g. Adafruit FT232H, or a USB-Blaster |
 | Host software | Quartus, `nios2-download`, `nios2-terminal` | Python with pyftdi |
 | Application load | Nios debug module writes the ELF | FPGA user JTAG chain writes `ultimate.bin` to RAM |
 | Application start | `nios2-download -g` | Bootloader in the FPGA image, via a boot request in RAM |
@@ -63,6 +63,38 @@ has no target voltage sense.
   machine is switched off. Fit and remove the socket with the supply disconnected.
 - The tool drives TCK, TDI and TMS only while a command runs, and leaves all four pins
   as inputs when it exits.
+
+### USB-Blaster
+
+An Altera USB-Blaster or one of its clones (USB `09fb:6001`) works as well. Its 10-pin
+plug has the layout of P5 (TCK 1, GND 2, TDO 3, VCC sense 4, TMS 5, TDI 9, GND 10) and
+goes straight on, no wires. Select it with `--url blaster` or
+`U64II_JTAG_URL=blaster`; every command, the gdb server and the monitor take it.
+
+`blaster` opens a USB-Blaster only when it is the only one attached. With a second
+one on the same host, for example on an Ultimate 64, it stops and lists what it
+found, because it could otherwise open the other machine's cable. Name the one on
+this machine by its serial number:
+
+```bash
+U64II_JTAG_URL=blaster:8aB75VK4 tooling/u64ii_jtag.sh probe
+```
+
+Clones whose serial numbers clash are named by bus and address instead, in hex as
+pyftdi reads them, for example `blaster:1:1a`; the list shows that form for them.
+A Blaster held by another program, such as Quartus' `jtagd`, cannot be opened, and
+the error says so.
+
+- TCK is set by the cable; `--frequency` does not apply.
+- When a command ends the tool switches the cable's outputs off (bit 5). That turns
+  the drivers off on an original USB-Blaster; some clones use the bit only for the
+  LED and keep driving TCK, TMS and TDI. To be sure, unplug the USB.
+- Unplug the Blaster's USB before switching the machine on or off. With the cable
+  active at power-on a C64 Ultimate has been seen to stay dark, its FPGA not loaded
+  from flash; an idle, plugged-in Blaster has also booted normally, so this is a
+  caution, not a rule that always bites.
+- On Linux the udev rule is the same as below with `idVendor` `09fb` and `idProduct`
+  `6001`.
 
 On Linux, give your user access to the FT232H once:
 
@@ -406,8 +438,8 @@ verified on a C64 Ultimate.
 
 ## Status
 
-`tooling/test_u64ii_jtag.py` runs the tool against a simulated FT232H and a Python
-model of the user chain written from `jtag_client_xilinx.vhd`.
+`tooling/test_u64ii_jtag.py` runs the tool against a simulated FT232H, and the same
+tests again against a simulated USB-Blaster, with a Python model of the user chain written from `jtag_client_xilinx.vhd`.
 
 On a C64 Ultimate (XC7A50T) every command has run: `probe`, `console`, `dump`,
 `fpga`, `run` with and without an FPGA reload, `run --warm`, `reset` back to the

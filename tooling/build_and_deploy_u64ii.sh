@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the built Ultimate 64 Elite II / C64 Ultimate application from RAM over
-# JTAG (FT232H). The counterpart of build_and_deploy_u64.sh for the Artix-7
+# JTAG (FT232H or USB-Blaster). The counterpart of build_and_deploy_u64.sh for the Artix-7
 # boards, which have no Nios II and no nios2-download.
 #
 # Like the U64 script it does not build and takes no arguments: it loads
@@ -14,7 +14,7 @@
 #                           path. "warm" keeps the running FPGA image and
 #                           restarts only the CPU, about 7 s faster.
 #   U64II_JTAG_CONSOLE=N    show the application's console for N seconds after
-#   U64II_JTAG_URL          pyftdi URL of the FT232H
+#   U64II_JTAG_URL          pyftdi URL of the FT232H, or blaster
 
 set -euo pipefail
 
