@@ -151,8 +151,8 @@ class EventLogTest(unittest.TestCase):
     def test_appends_to_an_existing_log(self):
         self.log.write("a", "INFO", "one")
         second = mon.EventLog(self.path)
+        self.addCleanup(second.handle.close)
         second.write("a", "INFO", "two")
-        second.handle.close()
         self.assertEqual([line.split()[-1] for line in self.lines()], ["one", "two"])
 
 
@@ -445,9 +445,20 @@ class VideoRunTest(VideoBase):
 
     def test_png_is_saved_at_most_every_png_every_seconds(self):
         video = self.watch(min_fps=0, png_every=0.5)
-        self.play(video, self.frames(50, gap=0.02))
-        # Frames end at 0.02, 0.04, ... 1.00; saves at 0.02, 0.52 (>= 0.5 later).
-        self.assertEqual(len(video.pngs), 2)
+        self.play(video, self.frames(51, gap=0.02))
+        # Frames end at 0.02, 0.04, ... 1.02; saves at 0.02, 0.52 and 1.02,
+        # each exactly 0.5 s after the one before.
+        self.assertEqual(len(video.pngs), 3)
+
+    def status_lines(self, seconds):
+        self.log, self.stop = RecordingLog(), FakeStop()
+        self.play(self.watch(min_fps=0), self.frames(50 * seconds))
+        return [t for t in self.log.levels("INFO") if t.endswith("lost")]
+
+    def test_status_is_logged_again_exactly_sixty_seconds_later(self):
+        # First status at 1 s; the next one is due at 61 s, not before.
+        self.assertEqual(len(self.status_lines(60)), 1)
+        self.assertEqual(len(self.status_lines(61)), 2)
 
     def test_all_black_picture_alerts_after_three_seconds(self):
         black = b"\0" * 768
@@ -456,14 +467,14 @@ class VideoRunTest(VideoBase):
             script += self.frames(50, start_seq=50 * second, payload=black)
         self.play(self.watch(min_fps=0), script)
         alerts = self.log.levels("ALERT")
-        # black since 0.02; the window closing at 4.0 is the first beyond 3 s.
         # Black since 0.02 s: the windows closing at 4 s and 5 s are beyond 3 s.
         # Repeats are passed on rate-limited; EventLog drops them.
         self.assertEqual(alerts, ["picture all black for 4s", "picture all black for 5s"])
         self.assertEqual({e[3:] for e in self.log.events if e[1] == "ALERT"}, {(30, "black")})
 
     def test_a_non_black_frame_clears_the_black_timer(self):
-        black, grey = b"\0" * 768, b"\xbb" * 768
+        # One non-zero byte is enough to make a frame not black.
+        black, grey = b"\0" * 768, b"\0" * 767 + b"\x01"
         script = []
         for second in range(5):
             payload = grey if second == 2 else black
@@ -638,8 +649,9 @@ class RestWatchTest(unittest.TestCase):
         self.assertEqual(alerts, [("rest", "ALERT", "errors: ['sd card']", 60, "")])
 
     def test_unreachable_then_back(self):
-        self.run_watch([INFO, OSError("timed out"), OSError("timed out"), INFO])
+        self.run_watch([INFO, OSError("timed out"), OSError("timed out"), INFO, INFO])
         alerts = [e for e in self.log.events if e[1] == "ALERT"]
+        # One "back after" line: the next good answer is not another return.
         self.assertEqual(alerts, [
             ("rest", "ALERT", "/v1/info unreachable: timed out", 30, "unreachable"),
             ("rest", "ALERT", "/v1/info unreachable: timed out", 30, "unreachable"),
@@ -893,10 +905,12 @@ class ConsolePollTest(ConsoleBase):
         self.assertEqual(len(jtag.boards), 2)
 
     def test_latin1_bytes_are_decoded(self):
-        self.with_jtag(FakeJtag(replies=[(0, b"caf\xe9\n"), (0, b"")]))
+        jtag = self.with_jtag(FakeJtag(replies=[(0, b"caf\xe9\n"), (0, b"")]))
         watch = self.watch()
         watch.poll()
         self.assertEqual(self.log.levels("LOG"), ["caf\xe9"])
+        # A level of 0 with data still drains again; only no data and level 0 ends it.
+        self.assertEqual(jtag.chain.requests, [(0xA, 0), (0xA, 0)])
 
     def test_identify_failure_still_closes_and_unlocks(self):
         jtag = self.with_jtag(FakeJtag(identify_error=FakeJtagError("no FT232H")))
@@ -913,8 +927,9 @@ class ConsolePollTest(ConsoleBase):
         self.assertEqual(self.stop.waits, [2.0, 2.0, 2.0])
         warns = [e for e in self.log.events if e[1] == "WARN"]
         self.assertEqual(warns, [("console", "WARN", "JTAG poll failed: usb gone", 60, "")])
-        # After the failure the next poll starts from an unknown level again.
-        self.assertEqual(jtag.chain.requests[-1], (0xA, 0))
+        # After the failure the next poll starts from an unknown level again:
+        # it pops nothing, although the failed poll had seen a level of 500.
+        self.assertEqual(jtag.chain.requests, [(0xA, 0), (0xA, 255), (0xA, 0), (0xA, 0)])
         self.assertFalse(watch.backlog)
 
 
@@ -932,7 +947,9 @@ class MainStopTest(unittest.TestCase):
                 if path not in self.proc:
                     raise FileNotFoundError(path)
                 return io.BytesIO(self.proc[path])
-            return real_open(path, *args, **kwargs)
+            # main() leaves the pid file to the garbage collector; hand it a copy.
+            with real_open(path, *args, **kwargs) as handle:
+                return io.StringIO(handle.read())
 
         patcher = mock.patch.object(mon, "open", fake_open, create=True)
         patcher.start()
@@ -1014,12 +1031,14 @@ class MainRunTest(unittest.TestCase):
                 test.order.append(("start_stream",))
 
         self.on_start = None
+        self.real_event_log = mon.EventLog
         patches = [
             mock.patch.object(mon, "time", self.clock),
             mock.patch.object(mon, "VideoWatch", Video),
             mock.patch.object(mon, "RestWatch", lambda *a: FakeThread("rest", *a)),
             mock.patch.object(mon, "ConsoleWatch", lambda *a: FakeThread("console", *a)),
             mock.patch.object(mon, "local_address_towards", self.local_address),
+            mock.patch.object(mon, "EventLog", self.event_log),
             mock.patch.object(mon.signal, "signal", self.install_handler),
             mock.patch.dict(os.environ, {"U64II_VERIFY_HOST": "envhost",
                                          "U64II_JTAG_URL": "ftdi://env/1"}),
@@ -1027,6 +1046,12 @@ class MainRunTest(unittest.TestCase):
         for patcher in patches:
             patcher.start()
             self.addCleanup(patcher.stop)
+
+    def event_log(self, path):
+        # main() never closes its event log; the test does.
+        log = self.real_event_log(path)
+        self.addCleanup(log.handle.close)
+        return log
 
     def local_address(self, host):
         self.order.append(("local_address", host))
@@ -1041,6 +1066,16 @@ class MainRunTest(unittest.TestCase):
 
     def test_sigterm_stops_and_cleans_up(self):
         pidfile = os.path.join(self.out, "monitor.pid")
+        waits = []
+
+        class BoundedEvent(FakeStop):
+            # The handler sets the event before the main loop starts, so the
+            # loop never waits; a broken handler fails here instead of hanging.
+            def wait(inner, seconds):
+                waits.append(seconds)
+                if len(waits) >= 3:
+                    raise AssertionError("SIGTERM did not stop the main loop")
+                return inner.flag
 
         def on_start(thread):
             if thread.kind == "console":
@@ -1049,8 +1084,10 @@ class MainRunTest(unittest.TestCase):
                 self.handlers[mon.signal.SIGTERM](mon.signal.SIGTERM, None)
 
         self.on_start = on_start
-        self.assertEqual(mon.main(["--out", self.out]), 0)
+        with mock.patch.object(mon.threading, "Event", BoundedEvent):
+            self.assertEqual(mon.main(["--out", self.out]), 0)
         self.assertTrue(self.stop_event.is_set())
+        self.assertEqual(waits, [])
         self.assertEqual(self.order, [("local_address", "envhost"), ("start_stream",),
                                       ("start", "video"), ("start", "rest"),
                                       ("start", "console")])

@@ -1,14 +1,26 @@
+#!/usr/bin/env python3
+"""Host tests for u64ii_menu.py without a device.
+
+The VT100 screen model is fed byte strings directly. serve() runs in a thread
+of the test process, with a socketpair standing in for the Telnet link and a
+stand-in `os` module whose _exit raises SystemExit, so a session that ends
+finishes its thread instead of the test process. client() talks to a real
+Unix socket, and main() runs with client() and the sleeps mocked.
+
+    python3 tooling/test_u64ii_menu.py
+"""
+
 import contextlib
 import gc
 import io
 import os
 import runpy
 import socket
-import stat
 import sys
 import tempfile
 import threading
 import time
+import traceback
 import unittest
 import warnings
 from unittest import mock
@@ -130,6 +142,11 @@ class ScreenCsiTest(unittest.TestCase):
     def test_private_mode_sequences_are_ignored(self):
         self.assertEqual(screen(b"a\x1b[?25lb\x1b[?25hc").text(), "abc")
 
+    def test_private_marker_is_dropped_from_the_parameters(self):
+        # ?2J (selective erase of the whole display) clears like 2J; with the
+        # "?" kept, the parameter would not parse and read as 0, which erases nothing.
+        self.assertEqual(screen(b"abc\x1b[?2Jx").text(), "x")
+
     def test_erase_display_only_clears_on_mode_2(self):
         self.assertEqual(screen(b"abc\x1b[J\x1b[0J\x1b[1J").text(), "abc")
         s = screen(b"\x1b(0abc\x1b[5;5H\x1b[2Jq")
@@ -164,18 +181,26 @@ class HelpersTest(unittest.TestCase):
 
 
 def ignore_leaked_sockets(test):
-    """client() and serve() leave their sockets to process exit, which tests do not reach."""
+    """client() and serve() leave their sockets to process exit, which tests do not reach.
+
+    Sockets the tests open themselves are closed by the tests.
+    """
     test.enterContext(warnings.catch_warnings())
     warnings.simplefilter("ignore", ResourceWarning)
     test.addCleanup(gc.collect)
 
 
-class RecordingThread(threading.Thread):
-    started = []
+class ModuleProxy:
+    """Stands in for a module inside u64ii_menu: the given names are replaced,
+    every other attribute is the real module's. Patching the real module would
+    reach every thread in the process."""
 
-    def start(self):
-        RecordingThread.started.append(self)
-        super().start()
+    def __init__(self, module, **replaced):
+        self._module = module
+        self.__dict__.update(replaced)
+
+    def __getattr__(self, name):
+        return getattr(self._module, name)
 
 
 class ServeTest(unittest.TestCase):
@@ -190,34 +215,68 @@ class ServeTest(unittest.TestCase):
         self.device, link = socket.socketpair()
         self.addCleanup(self.device.close)
         self.addCleanup(link.close)
-        RecordingThread.started = []
+        self.threads = []
+        threads = self.threads
+
+        class RecordingThread(threading.Thread):
+            def start(self):
+                threads.append(self)
+                super().start()
+
+        self.Thread = RecordingThread
+        self.connect = mock.Mock(return_value=link)
+        # serve() ends the process with os._exit; here it ends only the thread.
+        self.exit = mock.Mock(side_effect=SystemExit)
         patches = [mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.dir.name}),
-                   mock.patch.object(menu.socket, "create_connection", return_value=link),
-                   mock.patch.object(menu.os, "_exit", side_effect=SystemExit),
-                   mock.patch.object(menu.threading, "Thread", RecordingThread)]
-        _, self.connect, self.exit, _ = [patch.start() for patch in patches]
+                   mock.patch.object(menu, "socket",
+                                     ModuleProxy(socket, create_connection=self.connect)),
+                   mock.patch.object(menu, "threading",
+                                     ModuleProxy(threading, Thread=RecordingThread))]
         for patch in patches:
+            patch.start()
             self.addCleanup(patch.stop)
+        os_patch = mock.patch.object(menu, "os", ModuleProxy(os, _exit=self.exit))
+        os_patch.start()
+        self.addCleanup(self.restore_os, os_patch)
         self.path = menu.socket_path(self.host)
 
+    def restore_os(self, os_patch):
+        # A thread that outlived shutdown() would reach the real os._exit and
+        # end the whole test run; it keeps the stand-in instead.
+        if not any(thread.is_alive() for thread in self.threads):
+            os_patch.stop()
+
     def start(self):
-        server = RecordingThread(target=menu.serve, args=(self.host,), daemon=True)
+        server = self.Thread(target=menu.serve, args=(self.host,), daemon=True)
         server.start()
         self.addCleanup(self.shutdown, server)
+        # Ready once a request is answered: before that the path may be
+        # missing, a stale file, or bound but not yet listening.
         deadline = time.monotonic() + 5
-        while not os.path.exists(self.path) or not stat.S_ISSOCK(os.stat(self.path).st_mode):
-            self.assertLess(time.monotonic(), deadline, "serve never bound its socket")
-            time.sleep(0.01)
-        return server
+        while True:
+            try:
+                menu.client(self.host, "show")
+                return server
+            except (FileNotFoundError, ConnectionRefusedError):
+                self.assertTrue(server.is_alive(), "serve ended before it answered")
+                self.assertLess(time.monotonic(), deadline, "serve never answered")
+                time.sleep(0.01)
 
     def shutdown(self, server):
-        if server.is_alive():
-            menu.client(self.host, "stop")
-        server.join(5)
+        # The device side first: the pump thread sees EOF and ends while the
+        # stand-in _exit is still installed.
         self.device.close()
-        for thread in RecordingThread.started:
+        deadline = time.monotonic() + 5
+        while server.is_alive() and time.monotonic() < deadline:
+            try:
+                menu.client(self.host, "stop")
+            except OSError:
+                pass                                        # already gone, or going
+            server.join(0.5)
+        for thread in self.threads:
             thread.join(5)
-            self.assertFalse(thread.is_alive())
+        self.assertEqual([t for t in self.threads if t.is_alive()], [],
+                         "serve threads still running after shutdown")
 
     def show_until(self, text):
         deadline = time.monotonic() + 5
@@ -251,7 +310,10 @@ class ServeTest(unittest.TestCase):
 
     def test_wait_polls_until_the_text_arrives(self):
         self.start()
-        threading.Timer(0.3, self.device.sendall, (b"PLEASE TURN OFF",)).start()
+        timer = threading.Timer(0.3, self.device.sendall, (b"PLEASE TURN OFF",))
+        timer.start()
+        self.addCleanup(timer.join, 5)
+        self.addCleanup(timer.cancel)
         started = time.monotonic()
         self.assertEqual(menu.client(self.host, "wait", "TURN OFF", "5"), "PLEASE TURN OFF\n")
         self.assertLess(time.monotonic() - started, 4)
@@ -274,7 +336,7 @@ class ServeTest(unittest.TestCase):
     def test_device_closing_the_link_ends_the_session(self):
         self.start()
         self.device.close()
-        pump = RecordingThread.started[1]
+        pump = self.threads[1]
         pump.join(5)
         self.assertFalse(pump.is_alive())
         self.exit.assert_called_once_with(0)
@@ -291,12 +353,16 @@ class MainTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
+        self.sleep = mock.Mock()
         patches = [mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.dir.name}),
-                   mock.patch.object(menu.time, "sleep"),
+                   mock.patch.object(menu, "time", ModuleProxy(time, sleep=self.sleep)),
                    mock.patch.object(menu, "client", return_value="Main menu\n")]
-        _, self.sleep, self.client = [patch.start() for patch in patches]
+        _, _, self.client = [patch.start() for patch in patches]
         for patch in patches:
             self.addCleanup(patch.stop)
+
+    def spawnl(self):
+        return mock.patch.object(menu, "os", ModuleProxy(os, spawnl=mock.Mock()))
 
     def run_main(self, *args):
         out, err = io.StringIO(), io.StringIO()
@@ -323,17 +389,17 @@ class MainTest(unittest.TestCase):
 
     def test_start_spawns_the_server_and_shows_the_screen(self):
         open(menu.socket_path("c64u"), "w").close()
-        with mock.patch.object(menu.os, "spawnl") as spawn:
+        with self.spawnl() as fake_os:
             rc, out, _ = self.run_main("c64u", "start")
         self.assertEqual(rc, 0)
-        spawn.assert_called_once_with(os.P_NOWAIT, sys.executable, sys.executable,
+        fake_os.spawnl.assert_called_once_with(os.P_NOWAIT, sys.executable, sys.executable,
                                       os.path.abspath(menu.__file__), "c64u", "serve")
         self.assertEqual(self.sleep.call_args_list, [mock.call(1.5)])
         self.client.assert_called_once_with("c64u", "show")
         self.assertEqual(out, "Main menu\n")
 
     def test_start_gives_the_server_five_seconds_to_bind(self):
-        with mock.patch.object(menu.os, "spawnl"):
+        with self.spawnl():
             self.run_main("c64u", "start")
         self.assertEqual(self.sleep.call_args_list, [mock.call(0.1)] * 50 + [mock.call(1.5)])
         self.client.assert_called_once_with("c64u", "show")
@@ -373,10 +439,21 @@ class MainTest(unittest.TestCase):
 
     @unittest.expectedFailure
     def test_wait_without_text_prints_usage(self):
-        # Suspected defect: u64ii_menu.py:228 indexes args[0] unchecked, so
+        # Confirmed defect: u64ii_menu.py:228 indexes args[0] unchecked, so
         # `HOST wait` with no TEXT raises IndexError instead of printing usage.
-        rc, out, _ = self.run_main("c64u", "wait")
+        # Only that IndexError or a wrong result is the expected failure. Any
+        # other exception ends the test normally, which unittest reports as an
+        # unexpected success and so fails the run.
+        try:
+            rc, out, _ = self.run_main("c64u", "wait")
+        except IndexError:
+            raise
+        except Exception:                                   # noqa: BLE001
+            traceback.print_exc()
+            return
         self.assertEqual(rc, 2)
+        self.assertEqual(out, menu.__doc__ + "\n")
+        self.client.assert_not_called()
 
     def test_script_entry_point_exits_with_the_status(self):
         out = io.StringIO()
@@ -395,22 +472,25 @@ class ClientTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": tmp}):
             server = socket.socket(socket.AF_UNIX)
+            self.addCleanup(server.close)
+            server.settimeout(5)
             server.bind(menu.socket_path("h"))
             server.listen(1)
             got = []
 
             def answer():
                 conn, _ = server.accept()
-                got.append(conn.makefile("rb").readline())
-                conn.sendall(b"x" * 70000)               # more than one recv
-                conn.sendall("é\n".encode())
-                conn.close()
+                with conn, conn.makefile("rb") as reader:
+                    conn.settimeout(5)
+                    got.append(reader.readline())
+                    conn.sendall(b"x" * 70000)           # more than one recv
+                    conn.sendall("é\n".encode())
 
-            thread = threading.Thread(target=answer)
+            thread = threading.Thread(target=answer, daemon=True)
             thread.start()
             out = menu.client("h", "wait", "Done!", "5")
             thread.join(5)
-            server.close()
+            self.assertFalse(thread.is_alive())
         self.assertEqual(got, [b"wait\tDone!\t5\n"])
         self.assertEqual(out, "x" * 70000 + "é\n")
 
