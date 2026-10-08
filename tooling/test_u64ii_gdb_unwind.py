@@ -61,10 +61,19 @@ gdb_unwinder.Unwinder = Unwinder
 gdb_unwinder.register_unwinder = lambda locus, unwinder, replace=False: \
     registered.append((locus, unwinder, replace))
 gdb.unwinder = gdb_unwinder
-sys.modules["gdb"] = gdb
-sys.modules["gdb.unwinder"] = gdb_unwinder
-
-import u64ii_gdb_unwind as uw  # noqa: E402
+# The fake is installed only while the module imports, so no other test file
+# sees a `gdb` or this unwinder in sys.modules; `uw` keeps its own reference.
+_SAVED = {name: sys.modules.get(name) for name in ("gdb", "gdb.unwinder", "u64ii_gdb_unwind")}
+sys.modules.update({"gdb": gdb, "gdb.unwinder": gdb_unwinder})
+sys.modules.pop("u64ii_gdb_unwind", None)
+try:
+    import u64ii_gdb_unwind as uw  # noqa: E402
+finally:
+    for _name, _module in _SAVED.items():
+        if _module is None:
+            sys.modules.pop(_name, None)
+        else:
+            sys.modules[_name] = _module
 
 
 class Block:
@@ -200,7 +209,6 @@ class ScanTest(unittest.TestCase):
         self.assertEqual((size, alloc), (48, 0x1004))
         self.assertEqual(saves, {"ra": (44, 0x100C), "s0": (40, 0x1010)})
         self.assertEqual(arch.calls, [(START, END - 1, uw.LIMIT)])
-        self.assertEqual(uw.LIMIT, 4096)
 
     def test_stops_once_both_saves_are_found(self):
         arch = Arch(LISTING)

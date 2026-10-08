@@ -738,8 +738,9 @@ class DeviceLockTest(unittest.TestCase):
             jt.DeviceLock(wait=0).__enter__()
 
     def test_lock_held_by_an_ancestor_covers_this_process(self):
-        self.hold(f"pid={os.getppid()} with-device-locks\n")
-        with jt.DeviceLock(wait=0) as lock:
+        self.hold("pid=4100 with-device-locks\n")
+        with mock.patch.object(jt.os, "getppid", return_value=4100), \
+                jt.DeviceLock(wait=0) as lock:
             self.assertIsNone(lock.handle)          # not taken a second time
         self.assertFalse(self.free())               # the ancestor still holds it
 
@@ -763,23 +764,39 @@ class DeviceLockTest(unittest.TestCase):
 
 
 class AncestorsTest(unittest.TestCase):
-    def test_includes_the_parent_but_not_this_process(self):
-        pids = jt._ancestors()
-        self.assertIn(os.getppid(), pids)
-        self.assertNotIn(os.getpid(), pids)
+    # A fixed parent pid: under a container entrypoint the real parent can be
+    # pid 1, where the walk stops before it starts.
+    PARENT = 4100
+
+    def setUp(self):
+        getppid = mock.patch.object(jt.os, "getppid", return_value=self.PARENT)
+        getppid.start()
+        self.addCleanup(getppid.stop)
 
     def test_follows_parent_links_and_stops_on_a_loop(self):
         stat = mock.mock_open(read_data="4242 (with (odd) name) S 4242 1 1")
         with mock.patch.object(jt, "open", stat, create=True):
-            self.assertEqual(jt._ancestors(), {os.getppid(), 4242})
+            self.assertEqual(jt._ancestors(), {self.PARENT, 4242})
 
     def test_unreadable_proc_stops_at_the_parent(self):
         with mock.patch.object(jt, "open", side_effect=OSError("no /proc"), create=True):
-            self.assertEqual(jt._ancestors(), {os.getppid()})
+            self.assertEqual(jt._ancestors(), {self.PARENT})
 
     def test_malformed_stat_stops_at_the_parent(self):
         with mock.patch.object(jt, "open", mock.mock_open(read_data="garbage"), create=True):
-            self.assertEqual(jt._ancestors(), {os.getppid()})
+            self.assertEqual(jt._ancestors(), {self.PARENT})
+
+    def test_init_ends_the_walk(self):
+        with mock.patch.object(jt.os, "getppid", return_value=1):
+            self.assertEqual(jt._ancestors(), set())
+
+
+class RealAncestorsTest(unittest.TestCase):
+    @unittest.skipIf(os.getppid() <= 1, "the test runner is a child of init")
+    def test_includes_the_parent_but_not_this_process(self):
+        pids = jt._ancestors()
+        self.assertIn(os.getppid(), pids)
+        self.assertNotIn(os.getpid(), pids)
 
 
 class MpsseTest(unittest.TestCase):
@@ -1171,10 +1188,13 @@ class BoardEdgeTest(unittest.TestCase):
         # Suspected defect: Board.console's `sink=sys.stdout` default is bound at
         # import (u64ii_jtag.py:671), so `console` output ignores a later
         # redirection of sys.stdout, unlike every log() line.
+        # No console_sink here: patching the default would reproduce the defect
+        # inside the test, and the test could then never pass after a fix.
+        # Until the fix, "hello" goes to the stdout of the test run.
         b, model, _ = board()
         model.chain.console_fifo.extend(b"hello")
-        stdout_at_import, out = io.StringIO(), io.StringIO()
-        with console_sink(stdout_at_import), contextlib.redirect_stdout(out):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
             b.console(0.1)
         self.assertEqual(out.getvalue(), "hello")
 
@@ -1423,6 +1443,7 @@ class CommandLineTest(unittest.TestCase):
         module.Ftdi, package.ftdi = PyFtdi, module
         out = io.StringIO()
         with mock.patch.dict(sys.modules, {"pyftdi": package, "pyftdi.ftdi": module}), \
+                mock.patch.object(sys, "path", list(sys.path)), \
                 mock.patch.object(sys, "argv", ["u64ii_jtag.py", "probe"]), \
                 contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as caught:
             runpy.run_path(jt.__file__, run_name="__main__")
@@ -1534,6 +1555,205 @@ class BlasterTest(unittest.TestCase):
             with self.assertRaises(jt.JtagError) as ctx:
                 b.identify()
             self.assertEqual("--frequency" in str(ctx.exception), cable == "ft232h")
+
+
+try:
+    from pyftdi.ftdi import Ftdi as PyFtdiConstants
+except ImportError:                     # the host tests themselves need no pyftdi
+    PyFtdiConstants = None
+
+
+@unittest.skipIf(PyFtdiConstants is None, "pyftdi is not installed")
+class PyftdiOpcodeTest(unittest.TestCase):
+    """The MPSSE opcodes against pyftdi's own table, an independent source.
+
+    FakeFtdi decodes what this file's authors believe the opcodes mean, so a
+    wrong opcode could pass every other test. pyftdi names each opcode by its
+    clock edges: data out on the falling edge (NVE) and TDO in on the rising
+    edge (PVE), as the FT232H code expects.
+    """
+
+    EXPECTED = {
+        "OP_W_BYTES_LSB": "WRITE_BYTES_NVE_LSB",
+        "OP_W_BITS_LSB": "WRITE_BITS_NVE_LSB",
+        "OP_RW_BYTES_LSB": "RW_BYTES_PVE_NVE_LSB",
+        "OP_RW_BITS_LSB": "RW_BITS_PVE_NVE_LSB",
+        "OP_W_BYTES_MSB": "WRITE_BYTES_NVE_MSB",
+        "OP_W_BITS_MSB": "WRITE_BITS_NVE_MSB",
+        "OP_W_TMS": "WRITE_BITS_TMS_NVE",
+        "OP_RW_TMS": "RW_BITS_TMS_PVE_NVE",
+        "OP_SET_LOW": "SET_BITS_LOW",
+        "OP_LOOPBACK_OFF": "LOOPBACK_END",
+        "OP_SEND_IMMEDIATE": "SEND_IMMEDIATE",
+        "OP_CLOCK_BITS": "CLK_BITS_NO_DATA",
+        "OP_CLOCK_BYTES": "CLK_BYTES_NO_DATA",
+    }
+
+    def test_every_opcode_is_the_command_pyftdi_names(self):
+        ours = {name for name in dir(jt) if name.startswith("OP_")}
+        self.assertEqual(ours, set(self.EXPECTED), "an opcode without a pyftdi counterpart")
+        for ours_name, pyftdi_name in self.EXPECTED.items():
+            with self.subTest(opcode=ours_name):
+                self.assertEqual(getattr(jt, ours_name), getattr(PyFtdiConstants, pyftdi_name))
+
+
+class BlasterFtdi:
+    """pyftdi's Ftdi as Blaster.open uses it: custom ids, open, latency, purge."""
+
+    registered = []
+    fail_open = None            # an exception for open_from_url to raise
+    short = False               # write_data reports one byte fewer
+    reply = b""
+
+    def __init__(self):
+        self.writes, self.calls, self.closed = [], [], False
+
+    @classmethod
+    def add_custom_vendor(cls, vid, name):
+        if ("vendor", vid) in cls.registered:
+            raise ValueError("already registered")
+        cls.registered.append(("vendor", vid))
+
+    @classmethod
+    def add_custom_product(cls, vid, pid, name):
+        if ("product", vid, pid) in cls.registered:
+            raise ValueError("already registered")
+        cls.registered.append(("product", vid, pid))
+
+    def open_from_url(self, url):
+        self.calls.append(("open", url))
+        if self.fail_open:
+            raise self.fail_open
+
+    def set_latency_timer(self, value):
+        self.calls.append(("latency", value))
+
+    def purge_buffers(self):
+        self.calls.append(("purge",))
+
+    def write_data(self, data):
+        self.writes.append(bytes(data))
+        return len(data) - 1 if self.short else len(data)
+
+    def read_data_bytes(self, size, attempt=1):
+        return self.reply[:size]
+
+    def close(self, freeze=False):
+        self.closed = True
+
+
+def fake_pyftdi(ftdi_class=None, usbtools=None):
+    """sys.modules entries for a pyftdi package with the given parts."""
+    package = types.ModuleType("pyftdi")
+    entries = {"pyftdi": package}
+    if ftdi_class is not None:
+        module = types.ModuleType("pyftdi.ftdi")
+        module.Ftdi, package.ftdi = ftdi_class, module
+        entries["pyftdi.ftdi"] = module
+    if usbtools is not None:
+        module = types.ModuleType("pyftdi.usbtools")
+        module.UsbTools, package.usbtools = usbtools, module
+        entries["pyftdi.usbtools"] = module
+    return entries
+
+
+class BlasterOpenTest(unittest.TestCase):
+    def setUp(self):
+        BlasterFtdi.registered = []
+        self.made = []
+        made = self.made
+
+        class Ftdi(BlasterFtdi):
+            def __init__(self):
+                super().__init__()
+                made.append(self)
+
+        self.Ftdi = Ftdi
+        nap = mock.patch.object(jt.time, "sleep")
+        nap.start()
+        self.addCleanup(nap.stop)
+
+    def open(self, url=jt.BLASTER_URL):
+        with mock.patch.dict(sys.modules, fake_pyftdi(self.Ftdi)):
+            return jt.Blaster.open(url)
+
+    def test_open_without_pyftdi_says_how_to_get_it(self):
+        with mock.patch.dict(sys.modules, {"pyftdi": None, "pyftdi.ftdi": None}), \
+                self.assertRaisesRegex(jt.JtagError, "pyftdi is missing.*u64ii_jtag.sh"):
+            jt.Blaster.open(jt.BLASTER_URL)
+
+    def test_open_registers_the_altera_ids_once(self):
+        self.open()
+        self.open()                                     # a second open finds them known
+        self.assertEqual(BlasterFtdi.registered,
+                         [("vendor", 0x09FB), ("product", 0x09FB, 0x6001)])
+
+    def test_open_resets_the_tap_and_leaves_tms_high(self):
+        b = self.open("ftdi://altera:usbblaster:ABC/1")
+        ftdi = self.made[-1]
+        self.assertEqual(ftdi.calls, [("open", "ftdi://altera:usbblaster:ABC/1"),
+                                      ("latency", 2), ("purge",), ("purge",)])
+        # More than one shift-mode payload of TMS-high clocks, in USB packets.
+        burst = b"".join(ftdi.writes[:-1])
+        self.assertEqual(burst, bytes((jt.BL_IDLE | jt.BL_TMS,
+                                       jt.BL_IDLE | jt.BL_TMS | jt.BL_TCK)) * 128)
+        self.assertGreater(len(burst), 2 * jt.BL_SHIFT_MAX)
+        self.assertTrue(all(len(w) <= jt.BL_PACKET for w in ftdi.writes))
+        self.assertEqual(ftdi.writes[-1], bytes((jt.BL_IDLE | jt.BL_TMS,)))
+        self.assertEqual(b.tms_level, jt.BL_TMS)
+
+    def test_open_failure_names_a_program_that_may_hold_the_cable(self):
+        self.Ftdi.fail_open = OSError("Access denied")
+        with self.assertRaisesRegex(jt.JtagError, r"cannot open the USB-Blaster at "
+                                                  r"ftdi://altera:usbblaster/1: Access denied.*jtagd"):
+            self.open()
+
+    def test_short_write_is_an_error(self):
+        b = jt.Blaster(BlasterFtdi())
+        b.ftdi.short = True
+        with self.assertRaisesRegex(jt.JtagError, "short write"):
+            b.tms(0b011111, 6)
+            b.flush()
+
+    def test_short_read_is_an_error(self):
+        b = jt.Blaster(BlasterFtdi())
+        b.tms_level = 0
+        b.bytes_out(b"\x12\x34", read=True)
+        with self.assertRaisesRegex(jt.JtagError, "returned 0 of 2 bytes"):
+            b.flush()
+
+    def test_byte_shift_with_tms_high_is_refused(self):
+        b = jt.Blaster(BlasterFtdi())                   # TMS starts high
+        with self.assertRaisesRegex(jt.JtagError, "byte shift with TMS high"):
+            b.bytes_out(b"\x00")
+
+
+class FindBlastersTest(unittest.TestCase):
+    def test_without_pyftdi_says_how_to_get_it(self):
+        with mock.patch.dict(sys.modules, {"pyftdi": None, "pyftdi.usbtools": None}), \
+                self.assertRaisesRegex(jt.JtagError, "pyftdi is missing.*u64ii_jtag.sh"):
+            jt.find_blasters()
+
+    def test_lists_serial_bus_and_address_in_bus_order(self):
+        asked = []
+
+        class UsbTools:
+            @staticmethod
+            def find_all(ids):
+                asked.append(ids)
+                desc = types.SimpleNamespace
+                return [(desc(sn="B", bus=2, address=1), 1),
+                        (desc(sn=None, bus=1, address=7), 1),
+                        (desc(sn="A", bus=1, address=3), 1)]
+
+        with mock.patch.dict(sys.modules, fake_pyftdi(usbtools=UsbTools)):
+            found = jt.find_blasters()
+        self.assertEqual(asked, [[(0x09FB, 0x6001)]])
+        self.assertEqual(found, [("A", 1, 3), (None, 1, 7), ("B", 2, 1)])
+
+    def test_single_clone_without_serial_is_opened_by_bus_and_address(self):
+        with mock.patch.object(jt, "find_blasters", return_value=[(None, 1, 0x1c)]):
+            self.assertEqual(jt.blaster_url("blaster"), "ftdi://altera:usbblaster:1:1c/1")
 
 
 def board_on_blaster():

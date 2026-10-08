@@ -25,6 +25,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+os.environ["U64II_JTAG_LOCK"] = "off"     # never touch the real device lock
 import u64ii_gdbstub as gs  # noqa: E402
 
 
@@ -534,6 +535,9 @@ class Client:
                 break
             except OSError:
                 threading.Event().wait(0.02)
+        else:
+            # serve() binds the port itself; another process may have taken it.
+            raise ConnectionError(f"the gdb server on port {port} never accepted a connection")
         self.buf = b""
 
     def _need(self, n):
@@ -738,8 +742,12 @@ class MainTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 2)
 
     def test_script_reports_stub_errors_and_exits_1(self):
-        err = io.StringIO()
-        with mock.patch.object(sys, "argv", ["u64ii_gdbstub.py", "--elf", "app.elf"]), \
+        # The script imports u64ii_jtag itself; the fake keeps the real cable and
+        # the real device lock out of reach whatever order main() does things in.
+        err, calls = io.StringIO(), []
+        with mock.patch.dict(sys.modules, {"u64ii_jtag": fake_jtag(build(), calls)}), \
+                mock.patch.object(sys, "path", list(sys.path)), \
+                mock.patch.object(sys, "argv", ["u64ii_gdbstub.py", "--elf", "app.elf"]), \
                 mock.patch("subprocess.run", side_effect=OSError("none")), \
                 contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as cm:
             runpy.run_path(gs.__file__, run_name="__main__")

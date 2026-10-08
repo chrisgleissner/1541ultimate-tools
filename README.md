@@ -326,8 +326,9 @@ before pushing a branch upstream.
 
 ## Tests
 
-The host tests need only Python 3 and bash. The FT232H, the FPGA and the device are
-simulated, so they run without hardware or pyftdi:
+The host tests need only Python 3 and bash. The FT232H, the USB-Blaster, the FPGA and
+the device are simulated, so they run without hardware. With pyftdi installed, one more
+test checks the MPSSE opcodes against pyftdi's own table:
 
 ```bash
 python3 -m unittest discover -s tooling -p 'test_*.py'
