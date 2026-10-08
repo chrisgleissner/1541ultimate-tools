@@ -80,7 +80,8 @@ The resulting layout:
     ├── apply_pr.sh                  worktree with upstream PRs applied, uncommitted
     ├── flash_u64.py                 U64: unattended flash over JTAG + gdb
     ├── test_flash_u64.py            host tests for flash_u64.py
-    └── switchbot_press.py           presses a SwitchBot Bot (U64 power button)
+    ├── switchbot_press.py           presses a SwitchBot Bot (U64 power button)
+    └── test_switchbot_press.py      host tests for switchbot_press.py
 ```
 
 `build-tool` will not start without `build-tool.d/` beside it.

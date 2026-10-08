@@ -95,7 +95,7 @@ with-device-locks u64 -- python3 tooling/flash_u64.py \
     --host 192.168.1.13 \
     --u64 update_v3.15-339-gd5686424f.u64 \
     --sym-elf target/u64/nios2/updater/result/update.elf \
-    --power-button-cmd "python3 tooling/switchbot_press.py --mac AA:BB:CC:DD:EE:FF" \
+    --power-button-cmd "python3 tooling/switchbot_press.py --mac AA:BB:CC:DD:EE:FF --hold 0" \
     --expect-commit d5686424f
 ```
 
@@ -143,6 +143,8 @@ PySwitchbot`). Any command that presses the button once and exits works as
 - `--hold 5` followed by a normal press is a full power cycle while the FPGA is
   configured, because the 4 s power-off is handled by the FPGA rather than the
   Nios application.
+- The Bot stores its hold time. Pass `--hold 0` in `--power-button-cmd`, so that a
+  power-on press stays short after an earlier `--hold 5`.
 - The Bot body is 43 x 37 x 24 mm and presses with up to about 8 N. It mounts
   beside the button on the case. The button has to be pressed flush with the
   case, so the arm tip needs a nub (a 3 to 5 mm adhesive rubber bumper, or a

@@ -8,7 +8,7 @@ through the power button, pressed by --power-button-cmd or by a person.
     with-device-locks u64 -- python3 tooling/flash_u64.py \\
         --host 192.168.1.13 --u64 update.u64 \\
         --sym-elf target/u64/nios2/updater/result/update.elf \\
-        [--power-button-cmd "python3 tooling/switchbot_press.py --mac AA:BB:CC:DD:EE:FF"] \\
+        [--power-button-cmd "python3 tooling/switchbot_press.py --mac AA:BB:CC:DD:EE:FF --hold 0"] \\
         [--expect-commit d5686424f]
 
 --sym-elf is the updater ELF from a build of the same commit. It supplies the
