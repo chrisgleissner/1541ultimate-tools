@@ -1,6 +1,8 @@
+diff --git a/Makefile b/Makefile
+index 62d640bbf..387b6a109 100755
 --- a/Makefile
 +++ b/Makefile
-@@ -234,6 +234,14 @@
+@@ -312,6 +312,14 @@ u2plus_swapply:
  	@$(MAKE) -C target/u2plus/nios/ultimate
  	nios2-download -g target/u2plus/nios/ultimate/result/ultimate.elf
  

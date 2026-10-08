@@ -16,6 +16,7 @@ missing checkout is a failure instead.
 
 import os
 import re
+import subprocess
 import sys
 import unittest
 
@@ -170,6 +171,21 @@ class TrapFrame(unittest.TestCase):
         self.assertRegex(self.asm, rf"store_x\s+\w+,\s*{gs.FRAME_PC}\s*\(\s*sp\s*\)|"
                                    rf"store_x\s+\w+,\s*{gs.FRAME_PC}\s*\*\s*portWORD_SIZE")
 
+
+
+class Patches(unittest.TestCase):
+    """patches/ applies to the checkout as the README tells a reader to apply it."""
+
+    def test_every_patch_applies(self):
+        patches = os.path.join(HERE, "..", "..", "patches")
+        names = sorted(n for n in os.listdir(patches) if n.endswith(".patch"))
+        self.assertTrue(names)
+        for name in names:
+            with self.subTest(patch=name):
+                result = subprocess.run(["git", "-C", REPO, "apply", "--check",
+                                         os.path.join(patches, name)],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
 if __name__ == "__main__":
     unittest.main()
