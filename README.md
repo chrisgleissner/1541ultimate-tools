@@ -15,6 +15,9 @@ it and provide:
   deploy, then the remaining targets.
 - `tooling/build_and_deploy_u64.sh` - a fast JTAG redeploy of an already-built U64
   application, used both by hand and by the end-to-end test suites.
+- `tooling/flash_u64.py` - an unattended flash of an Ultimate 64 Elite (MK1): runs the
+  updater over JTAG, answers its questions by their text through gdb, and presses the
+  power button through an actuator such as `tooling/switchbot_press.py`.
 - `tooling/u64ii_jtag.sh` and `tooling/build_and_deploy_u64ii.sh` - JTAG for the C64
   Ultimate and Ultimate 64 Elite II through an FT232H or a USB-Blaster: run an application or an FPGA
   image from RAM, read the console and memory. Nothing is flashed.
@@ -22,6 +25,7 @@ it and provide:
   only, including the AMD login, for building the Artix-7 FPGA images.
 - `patches/` - optional patches against the upstream repository.
 
+`docs/u64-unattended-flash.md` describes the unattended U64 flash.
 `docs/u64-jtag-deploy.md` explains what the U64 JTAG deploy does and, more importantly,
 what it deliberately does not do. `docs/c64u-jtag.md` covers the C64 Ultimate and
 Ultimate 64 Elite II, whose FPGA, CPU and JTAG path are different.
@@ -73,7 +77,11 @@ The resulting layout:
     ├── u64ii_gdb_unwind.py          unwinder for gdb's missing frames
     ├── test_u64ii_gdb_unwind.py     host tests for the unwinder
     ├── test_u64ii_gdbstub.py        host tests for the server
-    └── apply_pr.sh                  worktree with upstream PRs applied, uncommitted
+    ├── apply_pr.sh                  worktree with upstream PRs applied, uncommitted
+    ├── flash_u64.py                 U64: unattended flash over JTAG + gdb
+    ├── test_flash_u64.py            host tests for flash_u64.py
+    ├── switchbot_press.py           presses a SwitchBot Bot (U64 power button)
+    └── test_switchbot_press.py      host tests for switchbot_press.py
 ```
 
 `build-tool` will not start without `build-tool.d/` beside it.
