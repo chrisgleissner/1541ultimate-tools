@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Upstream changes on its own schedule; a nightly run catches a firmware
+  # change that breaks the tools before someone meets it on a board.
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,13 +23,44 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The tests use only the standard library: the cables, the FPGA and the
-      # device are simulated, so no hardware or pyftdi is needed.
+      # The cables, the FPGA and the device are simulated. pyftdi, at the
+      # version tooling/u64ii_jtag.sh installs, is only an independent source
+      # for the MPSSE opcodes; coverage.py measures the tests.
+      - name: Install coverage.py and pyftdi
+        run: |
+          pyftdi=$(sed -n 's/^PYFTDI_VERSION="\(.*\)"$/\1/p' tooling/u64ii_jtag.sh)
+          test -n "$pyftdi"
+          python -m pip install "coverage==7.16.2" "pyftdi==$pyftdi"
+
       - name: Python tests (tooling)
-        run: python -m unittest discover -v -s tooling -p 'test_*.py'
+        run: python -m coverage run -m unittest discover -v -s tooling -p 'test_*.py'
 
       - name: Python tests (vivado)
-        run: python -m unittest discover -v -s vivado -p 'test_*.py'
+        run: python -m coverage run -m unittest discover -v -s vivado -p 'test_*.py'
+
+      - name: Coverage
+        run: |
+          python -m coverage combine
+          python -m coverage report --fail-under=98
+          python -m coverage xml -o coverage.xml
+          python -m coverage html -d coverage-html
+
+      # A pull request from a fork gets no secrets; Codecov then takes a
+      # tokenless upload, and a refused upload must not fail the fork's run.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: host-tests
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-html
+          path: coverage-html
+          if-no-files-found: ignore
 
       - name: apply_pr.sh tests
         run: bash tooling/test_apply_pr.sh
@@ -34,3 +70,45 @@ jobs:
           for f in build build-tool build-tool.d/*.sh tooling/*.sh vivado/*.sh; do
             bash -n "$f"
           done
+
+  upstream:
+    # The tools against a fresh 1541ultimate checkout: the firmware facts the
+    # tools carry, the README's install steps, and a real u64ii build.
+    runs-on: ubuntu-24.04
+    env:
+      ULTIMATE_REPO_DIR: ${{ github.workspace }}/1541ultimate
+      UPSTREAM_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: 1541ultimate-tools
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone 1541ultimate
+        run: |
+          git clone --depth 1 https://github.com/GideonZ/1541ultimate.git 1541ultimate
+          git -C 1541ultimate log -1 --format='upstream %h %s'
+
+      - name: Firmware facts and README install
+        working-directory: 1541ultimate-tools
+        run: |
+          python -m unittest -v tests/upstream/test_contract.py
+          python -m unittest -v tests/upstream/test_overlay.py
+
+      # The README's own install and exclude blocks, run as written.
+      - name: Install the tools as README.md describes
+        run: python 1541ultimate-tools/tests/upstream/readme.py "$GITHUB_WORKSPACE"
+
+      - name: Build u64ii with build-tool
+        working-directory: 1541ultimate
+        run: BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii
+
+      - name: RISC-V binutils for the disassembly checks
+        run: sudo apt-get install -y --no-install-recommends binutils-riscv64-unknown-elf
+
+      - name: Tools against the built application
+        working-directory: 1541ultimate-tools
+        run: python -m unittest -v tests/upstream/test_build.py

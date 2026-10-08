@@ -1,5 +1,10 @@
 # 1541ultimate-tools
 
+[![Tests](https://github.com/chrisgleissner/1541ultimate-tools/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/chrisgleissner/1541ultimate-tools/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/chrisgleissner/1541ultimate-tools/graph/badge.svg)](https://codecov.io/gh/chrisgleissner/1541ultimate-tools)
+[![Hardware](https://img.shields.io/badge/hardware-Ultimate%2064%20%7C%20C64%20Ultimate%20%7C%20Ultimate%20II-blue)](https://github.com/GideonZ/1541ultimate)
+[![Runtime](https://img.shields.io/badge/runtime-Python%20%7C%20Bash%20%7C%20Docker-blue)](https://github.com/chrisgleissner/1541ultimate-tools)
+
 Build and deployment tooling for the [1541 Ultimate](https://github.com/GideonZ/1541ultimate)
 firmware. These files are not part of that repository. They overlay onto a checkout of
 it and provide:
@@ -60,9 +65,13 @@ The resulting layout:
     ├── test_u64ii_jtag.py           host tests against a simulated FT232H and USB-Blaster
     ├── test_apply_pr.sh             host tests for apply_pr.sh
     ├── c64u_monitor.py              video stream, REST and console watcher
+    ├── test_c64u_monitor.py         host tests for the monitor
+    ├── u64ii_menu.py                C64U / U64E-II: drives the Telnet menu
+    ├── test_u64ii_menu.py           host tests for the menu driver
     ├── u64ii_gdb.sh                 gdb over JTAG: tasks as threads, backtraces
     ├── u64ii_gdbstub.py             the gdb remote server it starts
     ├── u64ii_gdb_unwind.py          unwinder for gdb's missing frames
+    ├── test_u64ii_gdb_unwind.py     host tests for the unwinder
     ├── test_u64ii_gdbstub.py        host tests for the server
     └── apply_pr.sh                  worktree with upstream PRs applied, uncommitted
 ```
@@ -268,21 +277,16 @@ cp /tmp/u2pl/target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit \
 place. Without it the build fails late, in the updater step, with
 `No rule to make target '.../u2p_ecp5_impl1.bit'`.
 
-### The RISC-V targets can fail for reasons unrelated to your changes
+### The RISC-V toolchain
 
-`u64ii` and `u2pl` currently fail against the `ghcr.io/gideonz/riscv:latest` base with:
+Upstream CI builds the RISC-V targets on a self-hosted runner whose image differs
+from `ghcr.io/gideonz/riscv:latest`. The image `build-tool` prepares from that base
+builds `u64ii` from upstream master; the `upstream` job in
+`.github/workflows/test.yml` checks this every night. Before treating a RISC-V
+build failure as a regression, build the same target from a clean checkout and
+compare.
 
-```
-software/io/c64/c64_crt.cc:19: error: conflicting declaration 'uint8_t __cart_rom_start'
-software/io/c64/c64.h:420: note: previous declaration as 'uint8_t __cart_rom_start [1048576]'
-```
-
-This reproduces on an unmodified upstream branch, so it is pre-existing rather than
-caused by a local change. Upstream CI stays green because its self-hosted runner uses
-a different image whose g++ is less strict. Before treating a failure here as a
-regression, build the same target from a clean checkout and compare.
-
-To build them with the toolchain upstream CI uses, place a `riscv32-unknown-elf` GCC
+To build the RISC-V targets with the toolchain upstream CI uses, place a `riscv32-unknown-elf` GCC
 10.2.0 at `riscv/` inside the build tools directory (`--build-tools-dir`), so that
 `<build tools>/riscv/bin/riscv32-unknown-elf-g++` exists. `build-tool` then puts it
 ahead of the image's toolchain for u2, u2pl and u64ii, and stops if its version or
@@ -322,8 +326,9 @@ before pushing a branch upstream.
 
 ## Tests
 
-The host tests need only Python 3 and bash. The FT232H, the FPGA and the device are
-simulated, so they run without hardware or pyftdi:
+The host tests need only Python 3 and bash. The FT232H, the USB-Blaster, the FPGA and
+the device are simulated, so they run without hardware. With pyftdi installed, one more
+test checks the MPSSE opcodes against pyftdi's own table:
 
 ```bash
 python3 -m unittest discover -s tooling -p 'test_*.py'
@@ -332,4 +337,27 @@ bash tooling/test_apply_pr.sh
 ```
 
 `.github/workflows/test.yml` runs them, and a `bash -n` syntax check of every shell
-script, on each push to `main` and on every pull request.
+script, on each push to `main`, on every pull request and every night. It measures
+coverage with coverage.py, fails below 98%, and publishes the result to Codecov.
+`.coveragerc` holds the settings, so the same measurement runs locally:
+
+```bash
+python3 -m coverage run -m unittest discover -s tooling -p 'test_*.py'
+python3 -m coverage run -m unittest discover -s vivado -p 'test_*.py'
+python3 -m coverage combine && python3 -m coverage report
+```
+
+`tests/upstream/` checks the tools against a 1541ultimate checkout: the firmware
+facts the tools carry (user chain registers, bitstreams, boot magic, cache size,
+FreeRTOS trap frame), the install steps of this README run as written, and, after a
+`build-tool u64ii`, the gdb server's FreeRTOS offsets against the ELF's debug
+information and the unwinder against its disassembly. The CI job `upstream` clones
+GideonZ/1541ultimate and builds `u64ii` for this. Locally:
+
+```bash
+ULTIMATE_REPO_DIR=../1541ultimate python3 -m unittest discover -s tests/upstream -p 'test_*.py'
+```
+
+Without `ULTIMATE_REPO_DIR`, or without a `u64ii` build, those tests are skipped.
+`tests/upstream/test_build.py` also needs a RISC-V objdump, such as
+`riscv64-unknown-elf-objdump` from the `binutils-riscv64-unknown-elf` package.
