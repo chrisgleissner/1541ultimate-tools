@@ -65,9 +65,12 @@ jobs:
       - name: apply_pr.sh tests
         run: bash tooling/test_apply_pr.sh
 
+      - name: install.sh tests
+        run: python -m unittest discover -v -s tests -p 'test_install.py'
+
       - name: Shell syntax
         run: |
-          for f in build build-tool build-tool.d/*.sh tooling/*.sh vivado/*.sh; do
+          for f in build build-tool install.sh build-tool.d/*.sh tooling/*.sh vivado/*.sh; do
             bash -n "$f"
           done
 
@@ -98,7 +101,7 @@ jobs:
           python -m unittest -v tests/upstream/test_contract.py
           python -m unittest -v tests/upstream/test_overlay.py
 
-      # The README's own install and exclude blocks, run as written.
+      # The README's development install, run as written.
       - name: Install the tools as README.md describes
         run: python 1541ultimate-tools/tests/upstream/readme.py "$GITHUB_WORKSPACE"
 

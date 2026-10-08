@@ -258,8 +258,9 @@ $(declare -F u64_core_usage >/dev/null && u64_core_usage)
 ${COLOR_BOLD}NOTES${COLOR_RESET}
   u64ii embeds the Artix-7 bitstreams checked in under external/; building
   them needs Vivado and HDL sources that are not in this repository.
-  Settings such as DEPLOY_HOST, U64_VERIFY_HOST and U64II_VERIFY_HOST are read
-  from the environment, or from .build-tool.env beside this script.
+  U64_VERIFY_HOST and U64II_VERIFY_HOST are read from the environment, or from
+  .build-tool.env beside this script. DEPLOY_HOST and DEPLOY_PATH are read by
+  ./build only; build-tool takes --deploy-host and --deploy-path.
   Full u2 builds require Xilinx ISE.
   u2plus and u64 builds require Quartus/Nios tools even in --sw-only mode.
   Full u2pl builds require Lattice Diamond.
