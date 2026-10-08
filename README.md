@@ -319,3 +319,17 @@ make u64_swapply
 
 This is a modification to a tracked file, so revert it with `git checkout Makefile`
 before pushing a branch upstream.
+
+## Tests
+
+The host tests need only Python 3 and bash. The FT232H, the FPGA and the device are
+simulated, so they run without hardware or pyftdi:
+
+```bash
+python3 -m unittest discover -s tooling -p 'test_*.py'
+python3 -m unittest discover -s vivado -p 'test_*.py'
+bash tooling/test_apply_pr.sh
+```
+
+`.github/workflows/test.yml` runs them, and a `bash -n` syntax check of every shell
+script, on each push to `main` and on every pull request.
