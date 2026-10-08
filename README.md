@@ -14,7 +14,7 @@ it and provide:
   updater over JTAG, answers its questions by their text through gdb, and presses the
   power button through an actuator such as `tooling/switchbot_press.py`.
 - `tooling/u64ii_jtag.sh` and `tooling/build_and_deploy_u64ii.sh` - JTAG for the C64
-  Ultimate and Ultimate 64 Elite II through an FT232H: run an application or an FPGA
+  Ultimate and Ultimate 64 Elite II through an FT232H or a USB-Blaster: run an application or an FPGA
   image from RAM, read the console and memory. Nothing is flashed.
 - `vivado/install.sh` - an unattended install of AMD Vivado 2024.1 with Artix-7 support
   only, including the AMD login, for building the Artix-7 FPGA images.
@@ -61,7 +61,7 @@ The resulting layout:
     ├── read_u64ii_jtag_terminal.sh  C64U / U64E-II: console over JTAG
     ├── u64ii_jtag.sh                C64U / U64E-II: JTAG tool (pyftdi venv)
     ├── u64ii_jtag.py
-    ├── test_u64ii_jtag.py           host tests against a simulated FT232H
+    ├── test_u64ii_jtag.py           host tests against a simulated FT232H and USB-Blaster
     ├── test_apply_pr.sh             host tests for apply_pr.sh
     ├── c64u_monitor.py              video stream, REST and console watcher
     ├── u64ii_gdb.sh                 gdb over JTAG: tasks as threads, backtraces
@@ -111,7 +111,7 @@ dependency files, which already covers it.
 |---|---|
 | Docker | Every RISC-V target (u2, u2pl, u64ii) |
 | Quartus and Nios II EDS, on the host | The Nios II targets (u64, u2plus). The RISC-V image has no Nios toolchain, so these cannot build inside Docker. |
-| USB-Blaster | U64 JTAG deploy and JTAG monitoring only |
+| USB-Blaster | U64 JTAG deploy and JTAG monitoring; C64 Ultimate / Ultimate 64 Elite II JTAG with `U64II_JTAG_URL=blaster` |
 | FT232H (e.g. Adafruit) and Python 3 | C64 Ultimate / Ultimate 64 Elite II JTAG only; pyftdi is installed into a virtual environment on first use |
 | Lattice Diamond | Full `u2pl` FPGA synthesis only. See the u2pl note below. |
 
@@ -179,7 +179,7 @@ the Intel FPGA tools are somewhere the script does not find on its own:
 INTEL_FPGA_ROOT=/opt/intelFPGA_lite/19.1 bash tooling/build_and_deploy_u64.sh
 ```
 
-Run a C64 Ultimate or Ultimate 64 Elite II application from RAM over JTAG (FT232H;
+Run a C64 Ultimate or Ultimate 64 Elite II application from RAM over JTAG (FT232H or USB-Blaster;
 see `docs/c64u-jtag.md` for wiring and the first `probe`):
 
 ```bash
@@ -227,7 +227,7 @@ failed when unset.
 | `DEPLOY_PATH` | `build`, FTP deploy step | Defaults to `/Usb1/firmware/u64/custom` |
 | `U64_VERIFY_HOST` | post-deploy REST check for u64 | Verification is skipped with a warning |
 | `U64II_VERIFY_HOST` | post-deploy REST check for u64ii | Verification is skipped with a warning |
-| `U64II_JTAG_URL` | FT232H for u64ii JTAG | `ftdi://ftdi:232h/1` |
+| `U64II_JTAG_URL` | FT232H for u64ii JTAG, or `blaster` for a USB-Blaster | `ftdi://ftdi:232h/1` |
 | `INTEL_FPGA_ROOT` | U64 JTAG deploy and monitor | Searched under `~/intelFPGA_lite`, `~/altera_lite`, `/opt/...` |
 
 ```bash
