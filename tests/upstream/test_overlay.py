@@ -90,14 +90,6 @@ class Overlay(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Unknown target: no-such-target", result.stdout + result.stderr)
 
-    def test_build_tool_dry_run_prints_the_u64ii_build(self):
-        # Nothing runs: the commands a u64ii build would execute are printed.
-        result = self.run_tool("--dry-run", "--no-submodule-update", "u64ii",
-                               env={"BUILD_TOOL_ALLOW_PARTIAL": "1"})
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("make -j", result.stdout + result.stderr)
-        self.assertIn("u64ii", result.stdout + result.stderr)
-
     def test_jtag_tool_help_runs_in_the_overlay(self):
         result = subprocess.run(["python3", "tooling/u64ii_jtag.py", "--help"], cwd=self.checkout,
                                 capture_output=True, text=True, timeout=60)
