@@ -115,6 +115,7 @@ configure_build_tools() {
     fi
 
     for candidate in \
+        "$root/lscc/diamond/3.13" \
         "$root/Lattice/Diamond/3.13" \
         "$root/lattice/diamond/3.13" \
         "$root/Diamond/3.13" \
@@ -130,6 +131,8 @@ configure_build_tools() {
     if [ -n "$lattice_base" ]; then
         append_path_if_dir "$lattice_base/bin/lin64"
         append_path_if_dir "$lattice_base/bin/linux"
+        # A strategy naming this node list runs its three PAR seeds concurrently.
+        printf '[%s]\nSYSTEM = linux\nCORENUM = 3\n' "$(hostname)" > /tmp/par_nodelist.txt
     fi
 
     for candidate in \
@@ -216,6 +219,14 @@ _docker_base_cmd() {
         cmd+=(--user "${host_uid}:${host_gid}")
     fi
     cmd+=(-e HOME=/tmp/1541u-home)
+
+    if [ -n "${LATTICE_LICENSE_FILE:-}" ]; then
+        # Preserve the physical host ID used by the node-locked license.
+        cmd+=(--network host
+              -v "$LATTICE_LICENSE_FILE":/opt/lattice-license/license.lic:ro
+              -e LATTICE_LICENSE_FILE=/opt/lattice-license/license.lic
+              -e LM_LICENSE_FILE=/opt/lattice-license/license.lic)
+    fi
 
     if [ -n "$BUILD_TOOLS_DIR" ]; then
         cmd+=(-v "$BUILD_TOOLS_DIR":/mnt/build-tools:ro -e BUILD_TOOLS_ROOT=/mnt/build-tools)

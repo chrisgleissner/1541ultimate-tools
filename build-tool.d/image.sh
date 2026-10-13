@@ -8,7 +8,7 @@ detect_default_build_tools_dir() {
     for candidate in \
         "$HOME/altera_lite" "$HOME/intelFPGA_lite" \
         "$HOME/xilinx" "$HOME/Xilinx" \
-        "$HOME/Lattice" "$HOME/lattice"
+        "$HOME/Lattice" "$HOME/lattice" "$HOME/lscc"
     do
         if [ -d "$candidate" ]; then
             BUILD_TOOLS_DIR="$HOME"
@@ -40,10 +40,26 @@ ensure_build_tools_dir() {
     [ -d "$BUILD_TOOLS_DIR" ] || die_usage "Build tools directory does not exist: $BUILD_TOOLS_DIR"
 }
 
+ensure_lattice_license_file() {
+    [ -z "${LATTICE_LICENSE_FILE:-}" ] && return 0
+    [ -f "$LATTICE_LICENSE_FILE" ] && [ -r "$LATTICE_LICENSE_FILE" ] \
+        || die_usage "LATTICE_LICENSE_FILE must name a readable license file."
+    LATTICE_LICENSE_FILE=$(realpath -- "$LATTICE_LICENSE_FILE")
+    export LATTICE_LICENSE_FILE
+}
+
 prepare_image() {
     [ "$CUSTOM_IMAGE" -eq 1 ] && return 0
 
-    if docker image inspect my_docker_image >/dev/null 2>&1; then
+    local target needs_lattice=0
+    for target in "${TARGETS[@]}"; do
+        target_requires_lattice "$target" && needs_lattice=1
+    done
+
+    # The legacy image lacks the runtime libraries Diamond loads, so an ECP5
+    # build always uses the prepared image.
+    if [ "$needs_lattice" -eq 0 ] \
+       && docker image inspect my_docker_image >/dev/null 2>&1; then
         DOCKER_IMAGE="my_docker_image"
         log_info "Using local legacy build image: $DOCKER_IMAGE"
         return 0
@@ -81,7 +97,9 @@ prepare_image() {
         "$BASE_IMAGE" -lc '
 set -e
 apt-get update
-apt-get install -y locales libglib2.0-0 libice6 libsm6 libx11-6 libxext6 libxrender1
+apt-get install -y locales libglib2.0-0 libice6 libsm6 libx11-6 libxext6 libxrender1 \
+    libgl1 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 \
+    libxcomposite1 libgraphite2-3
 locale-gen en_US.UTF-8
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
