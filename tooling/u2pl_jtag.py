@@ -860,8 +860,10 @@ def print_plan(
     print("  Power the U2+L first, then plug in the FT232H; unplug in the reverse order.")
     print("  Connect to the ECP5 JTAG header only; do not use the separate 1.8 V DEBUG header.")
 
-    print("\nHardware commands that will run:")
-    for command in commands:
+    selected = commands[:1] if args.probe else commands[:2] if args.dump else commands
+    heading = "Hardware commands for this mode:" if args.probe or args.dump or args.flash else "Commands --flash would run (inspection only):"
+    print("\n" + heading)
+    for command in selected:
         print("  " + shlex.join(command))
 
 

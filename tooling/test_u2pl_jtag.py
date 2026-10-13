@@ -353,6 +353,7 @@ class HardwareWorkflowTests(unittest.TestCase):
         self.probe.assert_not_called()
         self.run.assert_not_called()
         self.assertIn("'", self.stdout.getvalue())  # shell-safe paths with spaces
+        self.assertIn("Commands --flash would run (inspection only)", self.stdout.getvalue())
         self.assertEqual((self.output / "u2l-runtime.bit").read_bytes(), self.image.bitstream)
 
     def test_different_package_cannot_overwrite_extracted_images(self):
@@ -374,6 +375,8 @@ class HardwareWorkflowTests(unittest.TestCase):
         self.probe.assert_called_once()
         self.run.assert_not_called()
         self.assertIn("FPGA left unconfigured", self.stdout.getvalue())
+        self.assertNotIn(" -p ", self.stdout.getvalue())
+        self.assertNotIn(" -R ", self.stdout.getvalue())
 
     def test_sram_load_is_explicit_and_has_no_flash_writes(self):
         self.assertEqual(self.main("--sram"), 0)
@@ -388,6 +391,7 @@ class HardwareWorkflowTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)
         self.assertIn("-R", self.calls[0])
         self.assertIn("Backup SHA-256", self.stdout.getvalue())
+        self.assertNotIn(" -p ", self.stdout.getvalue())
 
     def test_full_flash_writes_only_after_backup_and_refreshes_last(self):
         self.assertEqual(self.main("--flash"), 0)
