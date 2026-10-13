@@ -2,8 +2,10 @@
 import hashlib
 import contextlib
 import io
+import runpy
 import subprocess
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -485,6 +487,12 @@ class HardwareWorkflowTests(unittest.TestCase):
 
 
 class ProgrammerTests(unittest.TestCase):
+    def test_empty_probe_output_is_an_error(self):
+        with patch.object(tool.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout="", stderr="")), contextlib.redirect_stdout(io.StringIO()), \
+             self.assertRaisesRegex(RuntimeError, "no IDCODE"):
+            tool.probe_target(["ecpprog", "-t"])
+
     def test_guard_is_required_before_hardware_access(self):
         args = tool.parse_args(["file.u2l"])
         with patch.object(tool.shutil, "which", return_value=None):
@@ -616,6 +624,7 @@ class HostPreflightTests(unittest.TestCase):
     def test_kernel_driver_and_unreadable_device_numbers(self):
         interface = self.device / "1-2:1.0"
         interface.mkdir()
+        self.assertEqual(self.preflight("libftdi.so => /lib/libftdi.so"), 0)
         driver = interface / "driver"
         driver.symlink_to(self.root / "ftdi_sio")
         self.assertEqual(self.preflight("libftdi.so => /lib/libftdi.so"), 0)
@@ -627,6 +636,74 @@ class HostPreflightTests(unittest.TestCase):
 
 
 class AdditionalValidationTests(unittest.TestCase):
+    def test_duplicate_and_unaligned_bitstreams_are_rejected(self):
+        payload = make_u2l()[12:]
+        at = payload.index(tool.ECP5_BIT_MARKER)
+        variants = (payload + tool.ECP5_BIT_MARKER, payload[:at] + b"x" + payload[at:])
+        with tempfile.TemporaryDirectory() as directory:
+            firmware = Path(directory) / "bad.u2l"
+            for content in variants:
+                blob = struct.pack("<III", tool.OUTER_LOAD_ADDRESS, len(content), tool.OUTER_LOAD_ADDRESS)
+                firmware.write_bytes(blob + content + b"\x00" * (-len(content) % 4))
+                with self.subTest(content=content[:20]), self.assertRaises(tool.FirmwareFormatError):
+                    tool.extract_recovery_image(firmware)
+
+    def test_oversized_embedded_bitstream_is_rejected(self):
+        bit = tool.ECP5_BIT_MARKER + tool.ECP5_PART_MARKER + b"x" * tool.APPLICATION_OFFSET + tool.ECP5_TRAILER
+        payload = pad_to_alignment(bit) + make_application()
+        blob = struct.pack("<III", tool.OUTER_LOAD_ADDRESS, len(payload), tool.OUTER_LOAD_ADDRESS) + payload
+        with tempfile.TemporaryDirectory() as directory:
+            firmware = Path(directory) / "oversized.u2l"
+            firmware.write_bytes(blob + b"\x00" * (-len(payload) % 4))
+            with self.assertRaisesRegex(tool.FirmwareFormatError, "overlap"):
+                tool.extract_recovery_image(firmware)
+
+    def test_layout_rejects_device_overrun_and_oversized_payload(self):
+        with self.assertRaisesRegex(tool.LayoutError, "end of"):
+            tool.check_write_stays_in_region(name="test", offset=tool.FLASH_SIZE, length=1,
+                                             region_start=0, region_end=tool.FLASH_SIZE * 2)
+        reference = AnalysisTests().reference()
+        bad = tool.RecoveryImage(reference.firmware, "", reference.outer, reference.bitstream,
+                                reference.application, tool.AppRecord(tool.RUNTIME_LOAD_ADDRESS,
+                                tool.BOOTLOADER_MAX_APPL_SIZE, tool.RUNTIME_LOAD_ADDRESS, 12))
+        with self.assertRaisesRegex(tool.LayoutError, "MAX_APPL_SIZE"):
+            tool.check_layout(bad)
+
+    def test_command_builder_can_plan_only_a_backup(self):
+        args = tool.parse_args(["f.u2l", "--dump"])
+        commands = tool.planned_commands(args, None, None, None, None, Path("backup"))
+        self.assertEqual(len(commands), 2)
+        self.assertIn("-R", commands[-1])
+
+    def test_nonzero_trailer_padding_is_rejected(self):
+        self.assertFalse(tool.preceded_by_bitstream_padding(tool.ECP5_TRAILER + b"\x01", 5, 0))
+
+    def test_analysis_reports_different_images_and_programmed_flash_disk(self):
+        reference = AnalysisTests().reference()
+        bit = tool.ECP5_BIT_MARKER + b"wrong part" + b"\x00" * 1024
+        app = make_application(b"different application payload")
+        raw = make_flash_image(bitstream=bit, application=app)
+        raw[tool.FLASH_DRIVE_OFFSET] = 0x11
+        raw[tool.FLASH_DRIVE_OFFSET + 0x1FE:tool.FLASH_DRIVE_OFFSET + 0x200] = b"\x55\xaa"
+        notes, faults = tool.analyse_flash_image(raw, reference)
+        self.assertTrue(any("not built for" in fault for fault in faults))
+        self.assertTrue(any("bitstream differs" in note for note in notes))
+        self.assertTrue(any("application differs" in note for note in notes))
+        self.assertTrue(any("FAT boot signature present" in note for note in notes))
+
+    def test_entry_point_stays_offline_in_default_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            firmware = Path(directory) / "f.u2l"
+            firmware.write_bytes(make_u2l())
+            with patch.object(sys, "argv", ["u2pl_jtag.py", str(firmware), "--output-dir", str(Path(directory) / "out")]), \
+                 patch.object(subprocess, "Popen") as popen, \
+                 patch.object(subprocess, "run") as run, \
+                 contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as status:
+                runpy.run_path(tool.__file__, run_name="__main__")
+            self.assertEqual(status.exception.code, 0)
+            popen.assert_not_called()
+            run.assert_not_called()
+
     def test_invalid_headers(self):
         for data, offset in ((b"", 0), (b"x" * 12, -1), (struct.pack("<III", 0, 0, 0), 0),
                              (struct.pack("<III", 0, 9999, 0), 0)):

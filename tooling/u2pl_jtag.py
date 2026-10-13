@@ -179,8 +179,8 @@ def looks_like_application_header(payload: bytes, offset: int) -> bool:
         return False
     if length == 0 or length >= BOOTLOADER_MAX_APPL_SIZE:
         return False
-    if 12 + ((length + 3) & ~3) > APPLICATION_SLOT_SIZE:
-        return False
+    # The bootloader limit is smaller than the application slot; check_layout
+    # independently checks the actual rounded erase span before programming.
     return offset + 12 + ((length + 3) & ~3) <= len(payload)
 
 
@@ -257,38 +257,23 @@ def extract_recovery_image(firmware: Path) -> RecoveryImage:
 
     application_record = find_application_record(payload, bitstream_start)
     application_start = application_record.data_offset - 12
-    if application_start % OBJECT_ALIGNMENT:
-        raise FirmwareFormatError(
-            f"embedded application starts at 0x{application_start:x}, which is not "
-            f"{OBJECT_ALIGNMENT}-byte aligned as the updater linker requires"
-        )
 
     # Locate the bitstream's final ECP5 trailer rather than guessing from
     # alignment: a Diamond .bit file can itself end on a four-byte boundary,
     # after which the binary-object linker still adds zero padding.
     trailer = payload.rfind(ECP5_TRAILER, bitstream_start, application_start)
-    if trailer < bitstream_start:
-        raise FirmwareFormatError("embedded bitstream has no ECP5 trailer")
+    # find_application_record already required the trailer and 0..15 zero
+    # padding bytes at this aligned boundary.
     bitstream_end = trailer + len(ECP5_TRAILER)
-    padding_size = application_start - bitstream_end
-    if padding_size >= OBJECT_ALIGNMENT:
-        raise FirmwareFormatError(
-            f"0x{padding_size:x} bytes between the bitstream and the application "
-            f"exceed the {OBJECT_ALIGNMENT}-byte linker alignment"
-        )
-    if payload[bitstream_end:application_start] != b"\x00" * padding_size:
-        raise FirmwareFormatError("non-zero bytes found in padding before embedded Ultimate application")
 
     bitstream = payload[bitstream_start:bitstream_end]
-    if len(bitstream) == 0 or len(bitstream) > APPLICATION_OFFSET:
+    if len(bitstream) > APPLICATION_OFFSET:
         raise FirmwareFormatError(
             f"embedded bitstream size 0x{len(bitstream):x} would overlap the U2+L application slot"
         )
 
     application_end = application_record.data_offset + ((application_record.length + 3) & ~3)
     application = payload[application_start:application_end]
-    if len(application) > APPLICATION_SLOT_SIZE:
-        raise FirmwareFormatError("embedded Ultimate application exceeds its U2+L flash slot")
 
     return RecoveryImage(
         firmware=firmware,

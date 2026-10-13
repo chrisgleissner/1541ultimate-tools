@@ -2,6 +2,8 @@
 
 import contextlib
 import io
+import runpy
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -65,6 +67,15 @@ class SampleTests(unittest.TestCase):
         self.assertEqual(value, 1)
         self.assertEqual(self.model.state, RTI)
         self.assertEqual(self.model.instructions, [tool.IR_SAMPLE, tool.IR_IDCODE])
+
+    def test_entry_point_uses_the_mocked_cable(self):
+        with patch.object(tool.Mpsse, "open", return_value=self.cable), \
+             patch("u64ii_jtag.DeviceLock", return_value=contextlib.nullcontext()), \
+             patch.object(sys, "argv", ["u2pl_jtag_sample.py"]), \
+             contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as status:
+            runpy.run_path(tool.__file__, run_name="__main__")
+        self.assertEqual(status.exception.code, 0)
+        self.assertTrue(self.ftdi.closed)
 
     def main(self, *args):
         with patch.object(tool.Mpsse, "open", return_value=self.cable), \
