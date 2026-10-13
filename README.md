@@ -34,10 +34,10 @@ You need git, Docker and a 1541ultimate checkout. If you have no checkout yet:
 git clone https://github.com/GideonZ/1541ultimate.git "$HOME/1541ultimate"
 ```
 
-Install release 0.1.0 into it. Set `ULTIMATE` to your checkout:
+Install release 0.2.0 into it. Set `ULTIMATE` to your checkout:
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 ULTIMATE="$HOME/1541ultimate"
 TMP="$(mktemp -d)"
 curl -fsSL "https://github.com/chrisgleissner/1541ultimate-tools/archive/refs/tags/v${VERSION}.tar.gz" | tar -xz -C "$TMP"
@@ -85,7 +85,7 @@ Pick a release from the [releases page](https://github.com/chrisgleissner/1541ul
 then run these commands. Only the first two lines change:
 
 ```bash
-VERSION=0.1.0                        # the release to apply
+VERSION=0.2.0                        # the release to apply
 ULTIMATE="$HOME/1541ultimate"        # your 1541ultimate checkout
 TMP="$(mktemp -d)"
 curl -fsSL "https://github.com/chrisgleissner/1541ultimate-tools/archive/refs/tags/v${VERSION}.tar.gz" | tar -xz -C "$TMP"
@@ -122,7 +122,7 @@ To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
 - **Does not copy anything else:** not this README, `docs/`, the logo, the tests,
   `vivado/` or `patches/`.
 - **Records the version** in `.1541ultimate-tools-version`: the release number, or
-  for a development install the version plus the commit, such as `0.1.0+g9da5bb4`.
+  for a development install the version plus the commit, such as `0.2.0+gdca632e`.
 - **Hides the tools from git:** it lists each installed path in the checkout's
   `.git/info/exclude`, anchored at the top of the checkout (`/build`, `/tooling/`).
   That file is local to the checkout and never committed, so `git status` stays clean
@@ -147,7 +147,7 @@ tool that an older release had and a newer one dropped stays until you delete it
 | Quartus and Nios II EDS, on the host | The Nios II targets (`u64`, `u2plus`); the Docker image has no Nios toolchain |
 | USB-Blaster | Ultimate 64 JTAG deploy and monitoring; optionally the C64 Ultimate JTAG tools |
 | FT232H (for example Adafruit) and Python 3 | C64 Ultimate / Ultimate 64 Elite II JTAG; pyftdi is installed into a virtual environment on first use |
-| Lattice Diamond | Full `u2pl` FPGA synthesis only (see [Troubleshooting](#troubleshooting)) |
+| Lattice Diamond 3.13 with Diamond Base and Synplify licences | Full `u2pl` FPGA synthesis only (see [docs/u2pl-build.md](docs/u2pl-build.md)) |
 
 `build-tool` prepares a Docker image `1541u-build:latest` from
 `ghcr.io/gideonz/riscv:latest` the first time it runs.
@@ -368,9 +368,10 @@ There are no credentials to set. The Ultimate's FTP server accepts anonymous log
 
 ### `u2pl` fails at the FPGA step
 
-The full `u2pl` target runs Lattice Diamond (`diamondc`), which is proprietary and is
-in no build image. Build software only with `-s` instead. That embeds an existing
-ECP5 bitstream, which you take from an upstream CI artifact:
+The full `u2pl` target runs Lattice Diamond 3.13 (`diamondc`), which is proprietary,
+licensed, and in no build image. To synthesize the ECP5 bitstream locally, follow
+[docs/u2pl-build.md](docs/u2pl-build.md). Otherwise build software only with `-s`.
+That embeds an existing ECP5 bitstream, which you take from an upstream CI artifact:
 
 ```bash
 gh run download <RUN_ID> --repo GideonZ/1541ultimate \
