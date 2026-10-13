@@ -60,16 +60,25 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         for path in ("build", "build.cmd", "build-tool", ".build-tool.env.example",
                      "build-tool.d/common.sh", "tooling/u64ii_jtag.py", "tooling/u64ii_jtag.sh",
-                     "tooling/build_and_deploy_u64.sh", "tooling/flash_u64.py"):
+                     "tooling/build_and_deploy_u64.sh", "tooling/flash_u64.py", "tooling/u2pl_jtag.py",
+                     "tooling/u2pl_jtag_sample.py"):
             with self.subTest(path=path):
                 self.assertTrue(os.path.isfile(self.path(path)))
-        for path in ("build", "build-tool", "tooling/u64ii_jtag.sh", "tooling/flash_u64.py"):
+        for path in ("build", "build-tool", "tooling/u64ii_jtag.sh", "tooling/flash_u64.py", "tooling/u2pl_jtag.py"):
             with self.subTest(executable=path):
                 self.assertTrue(os.access(self.path(path), os.X_OK))
         tool = subprocess.run(["./build-tool", "--list-targets"], cwd=self.checkout,
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(tool.returncode, 0, tool.stderr)
         self.assertIn("u64ii", tool.stdout)
+        jtag = subprocess.run(["tooling/u2pl_jtag.py", "--help"], cwd=self.checkout,
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(jtag.returncode, 0, jtag.stderr)
+        self.assertIn("--sram", jtag.stdout)
+        sample = subprocess.run(["tooling/u2pl_jtag_sample.py", "--help"], cwd=self.checkout,
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(sample.returncode, 0, sample.stderr)
+        self.assertIn("--refresh", sample.stdout)
 
     def test_copies_only_the_tools(self):
         self.assertEqual(self.install().returncode, 0)

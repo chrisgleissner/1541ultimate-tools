@@ -8,16 +8,18 @@ characters, and does not apply unchanged to the original Ultimate II or II+.
 Use this at your own risk. The author takes no responsibility for damage to your
 cartridge. Reason carefully about every bitstream change before applying it;
 successful compilation and timing checks alone do not establish safe operation.
-A JTAG approach is strongly recommended for experimentation, preferably volatile
-loading where supported by the cartridge-specific tools, before committing an
-image to flash.
+A JTAG approach is strongly recommended for experimentation. The
+[UII+L JTAG tool](u2pl-jtag.md) supports volatile FPGA loading with `--sram`
+and persistent FPGA/application recovery with a mandatory full flash backup.
+An SRAM experiment runs the application already in flash, so check compatibility.
 
 **Before applying a self-built FPGA image, have a working FT232H JTAG adapter,
 verified recovery access to the UII+L itself, a known-good recovery image, and a
-recovery procedure you understand.** The cartridge's WiFi-header pins can provide
-a connection point when correctly mapped to its JTAG signals. Verify the board
-revision, schematic, signal mapping and electrical levels before wiring; this
-guide does not provide a verified WiFi-header pinout. The C64U/Ultimate 64 Elite II
+recovery procedure you understand.** Follow the existing
+[UII+L FT232H wiring](../README.md#uiil-ft232h-jtag-wiring) and
+[backup/recovery procedure](u2pl-jtag.md). Even a probe clears the running FPGA
+configuration; it does not demonstrate a repair. Verify the board revision,
+signal mapping and electrical levels before wiring. The C64U/Ultimate 64 Elite II
 Artix JTAG commands and wiring in this repository are not UII+L ECP5 instructions.
 An FT232H working on a host C64U does not prove cartridge recovery is working.
 Building and inspecting files does not require an adapter; applying them does.

@@ -34,10 +34,10 @@ You need git, Docker and a 1541ultimate checkout. If you have no checkout yet:
 git clone https://github.com/GideonZ/1541ultimate.git "$HOME/1541ultimate"
 ```
 
-Install release 0.2.0 into it. Set `ULTIMATE` to your checkout:
+Install release 0.2.1 into it. Set `ULTIMATE` to your checkout:
 
 ```bash
-VERSION=0.2.0
+VERSION=0.2.1
 ULTIMATE="$HOME/1541ultimate"
 TMP="$(mktemp -d)"
 curl -fsSL "https://github.com/chrisgleissner/1541ultimate-tools/archive/refs/tags/v${VERSION}.tar.gz" | tar -xz -C "$TMP"
@@ -66,6 +66,8 @@ BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii # writes update_<commit>.ue2
 | `tooling/read_u64_jtag_terminal.sh`, `tooling/read_u64_uart_terminal.sh` | Ultimate 64 console output, over JTAG (`nios2-terminal`) or a USB-TTL adapter on the debug UART | `./build-tool --jtag-monitor u64`, `--uart-monitor u64` |
 | `tooling/flash_u64.py` | Flashes an Ultimate 64 Elite with nobody at the keyboard | [docs/u64-unattended-flash.md](docs/u64-unattended-flash.md) |
 | `tooling/u64ii_jtag.sh` | C64 Ultimate / Ultimate 64 Elite II over JTAG (FT232H or USB-Blaster): run an FPGA image and application from RAM, read the console and memory | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
+| `tooling/u2pl_jtag.py` | UII+L over Adafruit FT232H: inspect a `.u2l`, back up flash, try an FPGA in SRAM, or program and verify the boot images | [docs/u2pl-jtag.md](docs/u2pl-jtag.md) |
+| `tooling/u2pl_jtag_sample.py` | UII+L reset-line diagnosis through read-only ECP5 boundary scan; requires pyftdi | [Startup diagnosis and bisecting](docs/u2pl-jtag.md#diagnose-startup-and-bisect-packages) |
 | `tooling/build_and_deploy_u64ii.sh`, `tooling/read_u64ii_jtag_terminal.sh` | Run the built C64 Ultimate application from RAM; read its console | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/u64ii_menu.py` | Reads and drives the C64 Ultimate menu through its Telnet screen | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/switchbot_press.py` | Presses an Ultimate 64's power button through a SwitchBot Bot | [docs/u64-unattended-flash.md](docs/u64-unattended-flash.md) |
@@ -85,7 +87,7 @@ Pick a release from the [releases page](https://github.com/chrisgleissner/1541ul
 then run these commands. Only the first two lines change:
 
 ```bash
-VERSION=0.2.0                        # the release to apply
+VERSION=0.2.1                        # the release to apply
 ULTIMATE="$HOME/1541ultimate"        # your 1541ultimate checkout
 TMP="$(mktemp -d)"
 curl -fsSL "https://github.com/chrisgleissner/1541ultimate-tools/archive/refs/tags/v${VERSION}.tar.gz" | tar -xz -C "$TMP"
@@ -122,7 +124,7 @@ To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
 - **Does not copy anything else:** not this README, `docs/`, the logo, the tests,
   `vivado/` or `patches/`.
 - **Records the version** in `.1541ultimate-tools-version`: the release number, or
-  for a development install the version plus the commit, such as `0.2.0+gdca632e`.
+  for a development install the version plus the commit, such as `0.2.1+g1234567`.
 - **Hides the tools from git:** it lists each installed path in the checkout's
   `.git/info/exclude`, anchored at the top of the checkout (`/build`, `/tooling/`).
   That file is local to the checkout and never committed, so `git status` stays clean
@@ -147,6 +149,7 @@ tool that an older release had and a newer one dropped stays until you delete it
 | Quartus and Nios II EDS, on the host | The Nios II targets (`u64`, `u2plus`); the Docker image has no Nios toolchain |
 | USB-Blaster | Ultimate 64 JTAG deploy and monitoring; optionally the C64 Ultimate JTAG tools |
 | FT232H (for example Adafruit) and Python 3 | C64 Ultimate / Ultimate 64 Elite II JTAG; pyftdi is installed into a virtual environment on first use |
+| Adafruit FT232H, Python 3.10+ and `ecpprog` | UII+L ECP5 JTAG backup and deployment; see [programmer setup](docs/u2pl-jtag.md#install-the-programmer) |
 | Lattice Diamond 3.13 with Diamond Base and Synplify licences | Full `u2pl` FPGA synthesis only (see [docs/u2pl-build.md](docs/u2pl-build.md)) |
 
 `build-tool` prepares a Docker image `1541u-build:latest` from
@@ -191,7 +194,12 @@ FT232H header, long pin ends upward              UII+L WiFi-header, rear/north u
 
 Do not connect a power lead for this wiring. Before applying any self-built
 FPGA image, compare every lead against the table with the cartridge unpowered,
-then probe the ECP5 with a cartridge-specific JTAG tool. The Artix-oriented
+then probe the ECP5 with `tooling/u2pl_jtag.py`; follow the
+[UII+L backup and recovery guide](docs/u2pl-jtag.md). A probe clears the running
+FPGA configuration even though it leaves SPI flash unchanged. Set the Adafruit
+FT232H I2C MODE switch to **OFF**, and confirm ground continuity with a meter.
+Attach leads with both devices unpowered; power the cartridge through its host,
+then connect FT232H USB. Power down before removing leads. The Artix-oriented
 `u64ii_jtag.sh` must not be used on a UII+L.
 
 ### C64U / Ultimate 64 Elite II FT232H JTAG wiring
@@ -431,6 +439,8 @@ git -C "$ULTIMATE" checkout Makefile        # when done
 
 ## Documentation
 
+- [docs/u2pl-jtag.md](docs/u2pl-jtag.md): UII+L FT232H setup, full SPI backups,
+  volatile FPGA experiments, persistent recovery and backup restoration.
 - [docs/u2pl-build.md](docs/u2pl-build.md): full UII+L firmware and ECP5 bitstream
   build, Diamond/Synplify licensing, verification, and recovery prerequisites.
 - [docs/c64u-jtag.md](docs/c64u-jtag.md): JTAG on the C64 Ultimate and Ultimate 64
