@@ -19,6 +19,7 @@ of it, and they stay out of git there.
 - [Install](#install)
 - [Prerequisites](#prerequisites)
 - [Build firmware](#build-firmware)
+- [Full UII+L firmware and FPGA build](docs/u2pl-build.md)
 - [Run and deploy on a device](#run-and-deploy-on-a-device)
 - [Device settings](#device-settings)
 - [Troubleshooting](#troubleshooting)
@@ -150,6 +151,91 @@ tool that an older release had and a newer one dropped stays until you delete it
 
 `build-tool` prepares a Docker image `1541u-build:latest` from
 `ghcr.io/gideonz/riscv:latest` the first time it runs.
+
+### UII+L FT232H JTAG wiring
+
+This is for developers who already have an Adafruit FT232H (or compatible
+3.3 V FT232H board) and need physical recovery access to a UII+L. It is the
+cartridge's ECP5 JTAG connection, not the C64U/Ultimate 64 Elite II JTAG
+connection described elsewhere in this repository.
+
+Fit a header to the FT232H so the **long side of every pin points upward**.
+Use female-to-female Dupont leads from that header to the 14-pin WiFi-header
+position at the top of the cartridge. View the cartridge with its rear edge
+to the north: pins 1 to 7 are the north/top row, and pins 8 to 14 are the
+south/bottom row.
+
+```
+FT232H header, long pin ends upward              UII+L WiFi-header, rear/north upward
+
+             long ends upward                                   N / cartridge rear
+                    ^                                                  ^
+                    |                                                  |
+  FT232H pin        |                              top row:     [1] [2] [3 O] [4 C] [5 I] [6 M] [7]
+  ┌───────────┐     |                              bottom row:  [8 GND] [9] [10] [11] [12] [13] [14]
+  │ GND       │─────┴──────────────────────────────────────────────────┘
+  │ D0        │─────────────────────────────────────────────── pin 4, C
+  │ D1        │──────────────────────────────────────────────────── pin 5, I
+  │ D2        │─────────────────────────────────────── pin 3, O
+  │ D3        │───────────────────────────────────────────────────────── pin 6, M
+  └───────────┘
+```
+
+| FT232H | UII+L WiFi-header pin | Cartridge marking |
+|---|---:|---|
+| GND | 8 | GND |
+| D0 | 4 | C |
+| D1 | 5 | I |
+| D2 | 3 | O |
+| D3 | 6 | M |
+
+Do not connect a power lead for this wiring. Before applying any self-built
+FPGA image, compare every lead against the table with the cartridge unpowered,
+then probe the ECP5 with a cartridge-specific JTAG tool. The Artix-oriented
+`u64ii_jtag.sh` must not be used on a UII+L.
+
+### C64U / Ultimate 64 Elite II FT232H JTAG wiring
+
+For a C64 Ultimate or Ultimate 64 Elite II, use the board's P5 JTAG header.
+The detailed [C64U JTAG documentation](docs/c64u-jtag.md) is the source of
+truth; follow it if this summary ever differs from that document.
+The C64U/Elite II uses an Artix FPGA, so this wiring and its `u64ii_jtag.sh` tool
+do not apply to a UII+L.
+
+Fit the FT232H header with the long pin ends upward and use female-to-female
+Dupont leads. With the P5 header numbered as in the diagram, connect exactly:
+
+```
+FT232H header, long pin ends upward                  C64U / Ultimate 64 Elite II P5
+
+             long ends upward                                      pin 1 end
+                    ^                                                   ^
+                    |                                                   |
+  ┌───────────┐     |                         P5: [1 TCK] [2 GND] [3 TDO] [4 NC] [5 TMS]
+  │ D0        │─────┴─────────────────────────────────┘
+  │ D1        │──────────────────────────────────────────────────────── pin 9, TDI
+  │ D2        │────────────────────────────────────────────── pin 3, TDO
+  │ D3        │──────────────────────────────────────────────────── pin 5, TMS
+  │ GND       │──────────────────────────────────────── pin 2 or pin 10, GND
+  └───────────┘                                  P5: [6] [7] [8] [9 TDI] [10 GND]
+```
+
+| FT232H | P5 pin | Signal |
+|---|---:|---|
+| D0 | 1 | TCK |
+| D1 | 9 | TDI |
+| D2 | 3 | TDO |
+| D3 | 5 | TMS |
+| GND | 2 or 10 | GND |
+
+Leave the FT232H's I2C-mode switch **off**, and do not connect 3.3 V. Fit or
+remove the socket only with the machine's supply disconnected. Power the FT232H
+from USB before switching the machine on; an unpowered adapter can clamp JTAG
+signals and disrupt boot. Start with the non-mutating probe:
+
+```bash
+tooling/u64ii_jtag.sh probe
+```
 
 ## Build firmware
 
@@ -344,6 +430,8 @@ git -C "$ULTIMATE" checkout Makefile        # when done
 
 ## Documentation
 
+- [docs/u2pl-build.md](docs/u2pl-build.md): full UII+L firmware and ECP5 bitstream
+  build, Diamond/Synplify licensing, verification, and recovery prerequisites.
 - [docs/c64u-jtag.md](docs/c64u-jtag.md): JTAG on the C64 Ultimate and Ultimate 64
   Elite II. Covers wiring, commands, gdb, recovery and pull requests.
 - [docs/u64-jtag-deploy.md](docs/u64-jtag-deploy.md): what the Ultimate 64 JTAG deploy

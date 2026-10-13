@@ -25,7 +25,7 @@ fi
 # ---------------------------------------------------------------------------
 readonly DEFAULT_BASE_IMAGE="ghcr.io/gideonz/riscv:latest"
 readonly DEFAULT_PREPARED_IMAGE="1541u-build:latest"
-readonly PREPARED_IMAGE_REVISION="2"
+readonly PREPARED_IMAGE_REVISION="3"
 readonly DEFAULT_DEPLOY_USER="anonymous"
 readonly DEFAULT_DEPLOY_PASS=""
 readonly DEFAULT_DEPLOY_PATH="/Temp/"
@@ -496,6 +496,7 @@ fi
 
 detect_default_build_tools_dir
 ensure_build_tools_dir
+ensure_lattice_license_file
 
 # ---------------------------------------------------------------------------
 # Monitor-only short-circuit (no build/deploy requested)
