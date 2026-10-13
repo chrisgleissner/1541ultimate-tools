@@ -509,7 +509,7 @@ class ProgrammerTests(unittest.TestCase):
         for status, transcript, error in cases:
             with self.subTest(transcript=transcript):
                 process = Mock()
-                process.stderr = io.BytesIO(transcript)
+                process.stdout = io.BytesIO(transcript)
                 process.wait.return_value = status
                 process.__enter__ = Mock(return_value=process)
                 process.__exit__ = Mock(return_value=False)
@@ -525,7 +525,7 @@ class ProgrammerTests(unittest.TestCase):
     def test_reads_and_sram_loads_do_not_require_spi_verify_message(self):
         for flag in ("-R", "-S"):
             process = Mock()
-            process.stderr = io.BytesIO(b"Bye.\n")
+            process.stdout = io.BytesIO(b"ECP5 Status Register: 0x00200100\nBye.\n")
             process.wait.return_value = 0
             process.__enter__ = Mock(return_value=process)
             process.__exit__ = Mock(return_value=False)
@@ -533,6 +533,22 @@ class ProgrammerTests(unittest.TestCase):
                  patch.object(tool.sys, "stderr", SimpleNamespace(buffer=io.BytesIO())), \
                  contextlib.redirect_stdout(io.StringIO()):
                 tool.run_checked(["ecpprog", flag, "file"])
+
+    def test_sram_requires_successful_final_configuration_status(self):
+        for transcript, error in ((b"Bye.\n", "no final ECP5 status"),
+                                  (b"ECP5 Status Register: 0x00200100\nECP5 Status Register: 0x00200000\n", "configuration failed"),
+                                  (b"ECP5 Status Register: 0x00202100\n", "configuration failed"),
+                                  (b"ECP5 Status Register: 0x01a00100\n", "configuration failed")):
+            process = Mock()
+            process.stdout = io.BytesIO(transcript)
+            process.wait.return_value = 0
+            process.__enter__ = Mock(return_value=process)
+            process.__exit__ = Mock(return_value=False)
+            with self.subTest(transcript=transcript), \
+                 patch.object(tool.subprocess, "Popen", return_value=process), \
+                 patch.object(tool.sys, "stderr", SimpleNamespace(buffer=io.BytesIO())), \
+                 contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, error):
+                tool.run_checked(["ecpprog", "-S", "image.bit"])
 
 
 class HostPreflightTests(unittest.TestCase):

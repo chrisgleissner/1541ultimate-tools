@@ -146,6 +146,8 @@ the application already in SPI flash. Select a compatible FPGA/application
 pair. No backup is taken because no SPI contents are written. A cold boot
 returns to the flashed FPGA. This mode is supported by the recovered programmer;
 the new wrapper path is covered by host tests and has not been retested on hardware.
+The wrapper requires the final ECP5 status to report `DONE` without configuration
+errors; the programmer's zero exit status alone does not establish this.
 
 To deploy the two boot images persistently, use a new output directory:
 

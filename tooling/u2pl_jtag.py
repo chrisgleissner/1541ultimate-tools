@@ -535,10 +535,11 @@ def run_checked(command: list[str]) -> None:
     """
     print("+ " + shlex.join(command), flush=True)
     captured = bytearray()
-    with subprocess.Popen(command, stderr=subprocess.PIPE) as process:
-        assert process.stderr is not None
+    # ecpprog prints status registers to stdout and progress to stderr.
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as process:
+        assert process.stdout is not None
         while True:
-            chunk = process.stderr.read1(4096)
+            chunk = process.stdout.read1(4096)
             if not chunk:
                 break
             captured += chunk
@@ -561,6 +562,15 @@ def run_checked(command: list[str]) -> None:
         raise RuntimeError("ecpprog readback verification failed; the write did not land correctly")
     if "-R" not in command and "-S" not in command and "VERIFY OK" not in transcript:
         raise RuntimeError("ecpprog did not report VERIFY OK; refusing to continue")
+    if "-S" in command:
+        # This programmer exits zero even when configuration did not complete.
+        statuses = re.findall(r"ECP5 Status Register: 0x([0-9a-fA-F]{8})", transcript)
+        if not statuses:
+            raise RuntimeError("ecpprog reported no final ECP5 status after SRAM loading")
+        status = int(statuses[-1], 16)
+        errors = (1 << 13) | (7 << 23) | (7 << 26) | (1 << 29)
+        if not status & (1 << 8) or status & errors:
+            raise RuntimeError(f"ECP5 SRAM configuration failed: status 0x{status:08x}")
 
 
 # --- on-device image analysis ------------------------------------------------
@@ -878,6 +888,14 @@ def take_backup(commands: list[list[str]], backup: Path) -> bytes:
     run_checked(commands[1])
     if backup.stat().st_size != FLASH_SIZE:
         raise RuntimeError(f"backup size is {backup.stat().st_size}, expected {FLASH_SIZE}; refusing to write")
+    # Ensure the recovery bytes reach storage before starting any SPI erase.
+    with backup.open("rb") as stream:
+        os.fsync(stream.fileno())
+    directory_fd = os.open(backup.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
     print(f"Backup SHA-256: {sha256_file(backup)}")
     return backup.read_bytes()
 
