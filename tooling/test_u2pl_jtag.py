@@ -427,6 +427,11 @@ class HardwareWorkflowTests(unittest.TestCase):
         self.assertEqual(self.main("--flash"), 1)
         self.assertEqual(len(self.calls), 1)
 
+    def test_backup_storage_failure_blocks_writes(self):
+        with patch.object(tool.os, "fsync", side_effect=OSError("storage error")):
+            self.assertEqual(self.main("--flash"), 1)
+        self.assertEqual(len(self.calls), 1)
+
     def test_all_zero_backup_blocks_writes(self):
         self.backup_data = b"\x00" * tool.FLASH_SIZE
         self.assertEqual(self.main("--flash"), 1)
