@@ -3,8 +3,9 @@
 
 A U2+L ``.u2l`` file is an updater application, not an SPI flash image.  It
 contains the runtime ECP5 bitstream and the Ultimate application as embedded
-objects.  This utility extracts those two objects and uses the repository's
-``ecpprog`` driver to write them to their documented U2+L flash regions.
+objects. This utility extracts those objects and uses ``ecpprog`` to write
+them to their documented U2+L flash regions. See docs/u2pl-jtag.md for the
+tested programmer version; the firmware repository's fork lacks its ID guard.
 
 With no mode flag it is deliberately read-only: it validates the firmware and
 prints the exact recovery plan.  This is the intended mode before the
@@ -709,7 +710,7 @@ def preflight(args: argparse.Namespace) -> int:
     ecpprog = shutil.which(args.ecpprog)
     if ecpprog is None:
         print(f"  [FAIL] ecpprog not found on PATH as {args.ecpprog!r}")
-        problems.append("build and install tools/ecpprog from the 1541ultimate checkout")
+        problems.append("install gregdavill/ecpprog with -z support; see docs/u2pl-jtag.md")
     else:
         print(f"  [ ok ] ecpprog: {ecpprog}")
         try:
@@ -873,8 +874,8 @@ def print_plan(
 def require_ecpprog(args: argparse.Namespace) -> None:
     if not shutil.which(args.ecpprog):
         raise RuntimeError(
-            f"ecpprog not found: {args.ecpprog}. Build/install the bundled "
-            "ecpprog program first; see docs/u2pl-jtag.md or run --preflight."
+            f"ecpprog not found: {args.ecpprog}. Install the tested gregdavill/ecpprog "
+            "version; see docs/u2pl-jtag.md or run --preflight."
         )
     result = subprocess.run([args.ecpprog, "--help"], text=True, capture_output=True, check=False)
     if "-z" not in result.stdout + result.stderr:
