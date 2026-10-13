@@ -24,8 +24,8 @@ Building and inspecting files does not require an adapter; applying them does.
 
 ## Install the wrapper
 
-On Linux x86_64, install git and Docker, then use the current development version
-of these tools (the older 0.1.0 release predates these licensing additions):
+On Linux x86_64, install git and Docker, then install release 0.2.0 or later of
+these tools as the README describes, or the current development version:
 
 ```bash
 git clone https://github.com/GideonZ/1541ultimate.git "$HOME/1541ultimate"
