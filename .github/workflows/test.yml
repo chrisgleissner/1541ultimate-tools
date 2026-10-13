@@ -68,6 +68,9 @@ jobs:
       - name: install.sh tests
         run: python -m unittest discover -v -s tests -p 'test_install.py'
 
+      - name: Release workflow tests
+        run: python -m unittest discover -v -s tests -p 'test_release.py'
+
       - name: Shell syntax
         run: |
           for f in build build-tool install.sh build-tool.d/*.sh tooling/*.sh vivado/*.sh; do
