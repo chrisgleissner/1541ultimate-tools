@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish (for example v0.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      # gh uses the API; no checkout or execution of tagged source is needed.
+      - name: Publish the tagged version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            printf 'Invalid version tag: %s\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf 'Release %s already exists; leaving it unchanged.\n' "$RELEASE_TAG"
+            exit 0
+          fi
+          args=(release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
+                --verify-tag --title "1541ultimate-tools ${RELEASE_TAG#v}" --generate-notes)
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            args+=(--prerelease --latest=false)
+          fi
+          gh "${args[@]}"

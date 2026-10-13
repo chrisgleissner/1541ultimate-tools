@@ -462,6 +462,7 @@ are simulated, so no hardware is needed:
 python3 -m unittest discover -s tooling -p 'test_*.py'
 python3 -m unittest discover -s vivado -p 'test_*.py'
 python3 -m unittest discover -s tests -p 'test_install.py'
+python3 -m unittest discover -s tests -p 'test_release.py'
 bash tooling/test_apply_pr.sh
 ```
 
@@ -500,23 +501,38 @@ every night:
 - **`host-tests`:**
   - Runs every host test under coverage, fails below 98%, and publishes the result
     to Codecov.
-  - Also runs the `apply_pr.sh` and installer tests, and a `bash -n` check of every
-    shell script.
+  - Also runs the `apply_pr.sh`, installer and mocked release-workflow tests,
+    and a `bash -n` check of every shell script.
 - **`upstream`:** clones GideonZ/1541ultimate, installs the tools as this README
   says, builds `u64ii` with `build-tool`, and runs `tests/upstream/`.
 
 ### Making a release
 
 1. Set the new version in `VERSION` and merge that change to `main`.
-2. Tag the merge commit on an up-to-date `main` and publish the release:
+2. Tag the checked merge commit on an up-to-date `main` and push it:
 
 ```bash
 git checkout main && git pull --ff-only
 VERSION="$(cat VERSION)"
 git tag -a "v${VERSION}" -m "1541ultimate-tools ${VERSION}"
 git push origin "v${VERSION}"
-gh release create "v${VERSION}" --title "1541ultimate-tools ${VERSION}" --notes-file <notes>
 ```
+
+The `Release` workflow publishes a GitHub Release with generated notes when a
+`v…` version tag is pushed. Tags such as `v0.3.0-rc.1` create prereleases;
+existing releases are left unchanged on retries. GitHub determines the latest
+stable release from its date and version and supplies source ZIP/tarball downloads.
+
+To publish an existing tag that did not trigger the workflow, run:
+
+```bash
+gh workflow run release.yml --ref main -f tag=v0.2.1
+```
+
+The workflow verifies that the tag already exists; it never creates or moves
+one. Tags pushed by another Actions job using its default `GITHUB_TOKEN` do not
+trigger a new push workflow; use an authenticated developer push or explicitly
+dispatch the release workflow instead. See [GitHub's triggering rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
 
 The release's source archive is what the install commands above download.
 `.gitattributes` keeps the logo out of it.
