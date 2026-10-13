@@ -25,6 +25,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "tooling"))
 os.environ.setdefault("U64II_JTAG_LOCK", "off")
 import u64ii_gdbstub as gs  # noqa: E402
 import u64ii_jtag as jt  # noqa: E402
+import u2pl_jtag as u2pl  # noqa: E402
+import u2pl_jtag_sample as u2pl_sample  # noqa: E402
 
 REPO = os.environ.get("ULTIMATE_REPO_DIR", "")
 REQUIRED = os.environ.get("UPSTREAM_REQUIRED") == "1"
@@ -171,6 +173,33 @@ class TrapFrame(unittest.TestCase):
         self.assertRegex(self.asm, rf"store_x\s+\w+,\s*{gs.FRAME_PC}\s*\(\s*sp\s*\)|"
                                    rf"store_x\s+\w+,\s*{gs.FRAME_PC}\s*\*\s*portWORD_SIZE")
 
+
+
+class U2plFlashLayout(unittest.TestCase):
+    def test_reset_signal_is_on_expected_ball(self):
+        text = source("target", "fpga", "u2plus_ecp5", "u2p_ecp5.lpf")
+        self.assertRegex(text, r'LOCATE COMP "SLOT_RSTn" SITE "R3"')
+        self.assertEqual(u2pl_sample.EXPECTED_IDCODE, u2pl.EXPECTED_IDCODE)
+
+    def test_region_offsets_and_sizes(self):
+        text = source("software", "io", "flash", "w25q_flash.cc")
+        table = text.split("flash_addresses_u2pl[]", 1)[1].split("FLASH_ID_LIST_END", 1)[0]
+        for name, offset, size in (("BOOTFPGA", u2pl.BOOT_FPGA_OFFSET, 0x0C0000),
+                                   ("APPL", u2pl.APPLICATION_OFFSET, u2pl.APPLICATION_SLOT_SIZE),
+                                   ("FLASHDRIVE", u2pl.FLASH_DRIVE_OFFSET, u2pl.FLASH_DRIVE_SIZE),
+                                   ("CONFIG", u2pl.CONFIG_OFFSET, u2pl.CONFIG_SIZE)):
+            with self.subTest(region=name):
+                match = re.search(rf"FLASH_ID_{name},\s*0x00,\s*0x([0-9A-Fa-f]+),\s*0x([0-9A-Fa-f]+),\s*0x([0-9A-Fa-f]+)", table)
+                self.assertIsNotNone(match)
+                self.assertEqual(tuple(int(value, 16) for value in match.groups()), (offset, offset, size))
+        self.assertEqual(u2pl.CONFIG_OFFSET + u2pl.CONFIG_SIZE, u2pl.FLASH_SIZE)
+
+    def test_bootloader_application_limit(self):
+        text = source("software", "portable", "riscv", "bootloader.c")
+        self.assertEqual(hex_constant(text, r"MAX_APPL_SIZE\s+0x([0-9A-Fa-f]+)"),
+                         u2pl.BOOTLOADER_MAX_APPL_SIZE)
+        self.assertEqual(hex_constant(text, r"flash_addr\s*=\s*0x([0-9A-Fa-f]+)"),
+                         u2pl.APPLICATION_OFFSET)
 
 
 class Patches(unittest.TestCase):

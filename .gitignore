@@ -4,3 +4,5 @@ __pycache__/
 .coverage.*
 coverage-html/
 coverage.xml
+jtag-output/
+.u2pl-jtag-venv/
