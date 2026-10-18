@@ -536,3 +536,23 @@ dispatch the release workflow instead. See [GitHub's triggering rules](https://d
 
 The release's source archive is what the install commands above download.
 `.gitattributes` keeps the logo out of it.
+
+### JTAG adapter verification
+
+[`tooling/jtag_verify.py`](tooling/jtag_verify.py) discovers USB-Blaster I compatible
+and FT232H adapters and runs deterministic, non-disruptive transport checks on
+explicitly mapped, reviewed targets. It measures sustained and short-transaction
+readback reliability without programming the FPGA or stopping its processor.
+Start with `tooling/jtag_verify.sh --list`; see [usage and safety](docs/jtag-verify.md)
+and the [standards and coverage matrix](docs/jtag-verify-standards.md).
+The [test guide and hardware results](docs/jtag-verify-tests.md) explain what each
+check measures, what passed on the connected adapters, and what remains unverified.
+A passing transport soak leaves processor debugging suitability unverified. An
+explicitly opted-in U64 backend adds repeated register-read, code-read,
+continue/interrupt and resume checks using Intel's Nios II server; C64U CPU stepping is
+unsupported and remains excluded.
+
+The [code-driven investigation](docs/jtag-verify-investigation.md) records public
+source findings and a failed U64 debug soak that exposed a verifier status-guard
+defect. Live stepping is now disabled pending independent context qualification;
+transport success alone does not qualify an adapter for debugging.

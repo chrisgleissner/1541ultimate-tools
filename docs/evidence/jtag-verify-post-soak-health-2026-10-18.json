@@ -1,0 +1,44 @@
+{
+  "recorded_utc": "2026-10-18T08:19:35.997786+00:00",
+  "method": "Read-only GET /v1/info after failed native debug soak; no reset/reload/reconfiguration",
+  "targets": {
+    "u64": {
+      "status": "UNREACHABLE",
+      "error": "URLError: <urlopen error timed out>"
+    },
+    "c64u": {
+      "status": "REACHABLE",
+      "product": "C64 Ultimate",
+      "firmware_version": "1.2.1RC2",
+      "git_commit_hash": "262663a9",
+      "fpga_version": "126",
+      "core_version": "1.50",
+      "errors": []
+    }
+  },
+  "u64_manual_resume": {
+    "method": "Separate one-shot Intel 18.1 server, explicit current-PC RSP continue",
+    "acknowledgement": "+",
+    "server_exit": 0,
+    "server_observation": "Leaving target processor running",
+    "subsequent_register_only_attach": "Pausing target processor: OK",
+    "subsequent_pc": "0x000025dc",
+    "subsequent_cleanup": "Explicit continue acknowledged, server exited reporting processor running",
+    "limit": "Running observation does not establish firmware health or configuration-state history"
+  },
+  "after_final_safe_check": {
+    "recorded_utc": "2026-10-18T08:31:50.328910+00:00",
+    "u64": {
+      "status": "UNREACHABLE",
+      "error": "<urlopen error timed out>"
+    },
+    "c64u": {
+      "status": "REACHABLE",
+      "product": "C64 Ultimate",
+      "firmware_version": "1.2.1RC2",
+      "git_commit_hash": "262663a9",
+      "fpga_version": "126",
+      "errors": []
+    }
+  }
+}

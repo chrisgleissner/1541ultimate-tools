@@ -1,0 +1,42 @@
+{
+  "observed_utc": "2026-10-18T06:59:36.198553+00:00",
+  "method": "GET /v1/info only; identity/version reachability check, not an execution-state proof",
+  "targets": {
+    "u64": {
+      "initial_info_observed": {
+        "product": "Ultimate 64 Elite",
+        "firmware_version": "3.15a",
+        "git_commit_hash": "5d42e1db8",
+        "fpga_version": "126",
+        "core_version": "1.50"
+      },
+      "final_info_observed": {
+        "product": "Ultimate 64 Elite",
+        "firmware_version": "3.15a",
+        "git_commit_hash": "5d42e1db8",
+        "fpga_version": "126",
+        "core_version": "1.50"
+      },
+      "info_unchanged": true,
+      "errors": []
+    },
+    "c64u": {
+      "initial_info_observed": {
+        "product": "C64 Ultimate",
+        "firmware_version": "1.2.1RC2",
+        "git_commit_hash": "262663a9",
+        "fpga_version": "126",
+        "core_version": "1.50"
+      },
+      "final_info_observed": {
+        "product": "C64 Ultimate",
+        "firmware_version": "1.2.1RC2",
+        "git_commit_hash": "262663a9",
+        "fpga_version": "126",
+        "core_version": "1.50"
+      },
+      "info_unchanged": true,
+      "errors": []
+    }
+  }
+}

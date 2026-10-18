@@ -234,12 +234,18 @@ class Mpsse:
                             "tooling/u64ii_jtag.sh, which provides it") from exc
         ftdi = Ftdi()
         # TMS starts high, so no stray clock can leave Test-Logic-Reset.
-        ftdi.open_mpsse_from_url(url, direction=DIRECTION, initial=PIN_TMS,
-                                 frequency=frequency, latency=1)
-        ftdi.write_data(bytes((OP_LOOPBACK_OFF,)))
+        try:
+            ftdi.open_mpsse_from_url(url, direction=DIRECTION, initial=PIN_TMS,
+                                     frequency=frequency, latency=1)
+            ftdi.write_data(bytes((OP_LOOPBACK_OFF,)))
+        except BaseException:
+            # A partial command must not be followed by recovery commands or
+            # a return to UART mode, which would drive the target's TDO pin.
+            ftdi.close(freeze=True)
+            raise
         return cls(ftdi)
 
-    def release(self) -> None:
+    def release(self) -> bool:
         """Make every pin an input and keep it so after the port closes.
 
         A plain close returns the FT232H to its UART mode, which drives AD0
@@ -250,8 +256,10 @@ class Mpsse:
             self.expect = 0
             self.ftdi.write_data(bytes((OP_SET_LOW, 0x00, 0x00)))
             self.ftdi.close(freeze=True)
+            return True
         except Exception:                                   # noqa: BLE001
-            self.ftdi.close()
+            self.ftdi.close(freeze=True)
+            return False
 
     def queue(self, command: bytes, reads: int = 0) -> None:
         self.pending += command
@@ -368,14 +376,17 @@ class Blaster:
         ftdi.purge_buffers()
         return self
 
-    def release(self) -> None:
+    def release(self) -> bool:
         """Turn the outputs off before closing, so the cable drives no pin."""
+        disabled = False
         try:
             self.ops.clear()
             self._write(bytes((0,)))
+            disabled = True
         except Exception:                                   # noqa: BLE001
             pass
         self.ftdi.close()
+        return disabled
 
     # -- queueing --------------------------------------------------------------
     def _bits(self, tms: List[int], tdi: List[int], read: bool) -> None:

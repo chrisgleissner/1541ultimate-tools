@@ -1,0 +1,1369 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-18T08:07:12.857602+00:00",
+  "pyftdi": "0.57.2",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "source_sha256": {
+    "jtag_verify.py": "d4be74e3020a7f3a4350a02bea3c585a5962f325f2ee5804e7518d888ce3df66",
+    "u64ii_jtag.py": "ece3d928d8f815764e9dd71a5de60f0e590dcc93421ac350c29a03dd8ccedf1b",
+    "jtag_verify_debug.py": "f3606949d84c64d3c3d29434349d01b9e00902fd64f1e2385a6bbe905da482dc"
+  },
+  "settings": {
+    "adapter": [],
+    "type": "blaster",
+    "target": [
+      "09fb:6001@1-6=u64"
+    ],
+    "usb_id": [],
+    "list": false,
+    "allow_disruptive": true,
+    "debug_idle": true,
+    "intel_root": "/home/chris/intelFPGA_lite/18.1-cyclone",
+    "debug_health_host": "u64",
+    "debug_cycles": 1000,
+    "debug_steps": 100,
+    "cycles": 10,
+    "seed": 1541,
+    "frequency": 3000000,
+    "timeout": 180
+  },
+  "adapters": [
+    {
+      "adapter": {
+        "identifier": "09fb:6001@1-6",
+        "kind": "blaster",
+        "vid": 2555,
+        "pid": 24577,
+        "bus": 1,
+        "address": 3,
+        "ports": [
+          6
+        ],
+        "manufacturer": "Altera",
+        "product": "USB-Blaster",
+        "serial": "FYDK2020",
+        "speed": "full",
+        "descriptor_errors": []
+      },
+      "target": "u64",
+      "backend": "PyFtdi/libusb",
+      "capabilities_basis": "inferred from declared compatible type, not proof of authenticity",
+      "capabilities": [
+        "fixed cable clock",
+        "pin/byte shifts up to 63 bytes"
+      ],
+      "results": [
+        {
+          "requirement": "USB-ID",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "USB descriptors read; authenticity not established"
+        },
+        {
+          "requirement": "JTAG-SCAN",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "IR capture, IDCODE and one-bit BYPASS agree",
+          "covers": [
+            "TAP-ID",
+            "TAP-IR",
+            "TAP-BYPASS",
+            "SHIFT-BITS",
+            "SHIFT-BYTES",
+            "SHIFT-TMS"
+          ],
+          "idcode": "0x02b050dd",
+          "bypass_scans": 720,
+          "compared_bits": 6367710,
+          "observed_bit_errors": 0,
+          "elapsed_s": 15.379725201055408,
+          "bits_per_s": 414032.7552512464,
+          "latency_ms": {
+            "median": 1.001463970169425,
+            "maximum": 154.53157690353692,
+            "p95": 151.80801402311772
+          },
+          "short_scan_latency_ms": {
+            "median": 0.4228354664519429,
+            "maximum": 0.6415529642254114
+          },
+          "readback_sha256": "bd794a4cbf60d5fa612ce6d5aaa770289f561021d17bceec08b1067b81fc07d0",
+          "requested_hz": null,
+          "configured_hz": null,
+          "physical_clock": "UNVERIFIED: no instrument measurement"
+        },
+        {
+          "requirement": "TRANSPORT-SOAK",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "all scheduled scans completed without retries"
+        },
+        {
+          "requirement": "DEBUG-SESSION",
+          "status": "ERROR",
+          "safety": "DISRUPTIVE",
+          "detail": "DebugRunError: debug cycle 116 failed: <urlopen error timed out>",
+          "failed_cycle": 116,
+          "stable_register_reads": 1402,
+          "steps": [
+            {
+              "cycle": 1,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 2,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 3,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 5,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 7,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 8,
+              "pc_before": "0x000701c4",
+              "instruction": "0x18c00104",
+              "pc_after": "0x000701c8"
+            },
+            {
+              "cycle": 10,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 11,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 12,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 13,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 15,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 16,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 17,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 19,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 21,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 23,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 24,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 26,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 27,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 29,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 31,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 33,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 34,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 35,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 36,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 37,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 38,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 39,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 41,
+              "pc_before": "0x000025e0",
+              "instruction": "0x18bfe82e",
+              "pc_after": "0x00002584"
+            },
+            {
+              "cycle": 42,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 44,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 45,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 46,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 47,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 50,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 51,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 52,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 53,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 54,
+              "pc_before": "0x000025e0",
+              "instruction": "0x18bfe82e",
+              "pc_after": "0x00002584"
+            },
+            {
+              "cycle": 56,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 57,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 58,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 59,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 60,
+              "pc_before": "0x000025e0",
+              "instruction": "0x18bfe82e",
+              "pc_after": "0x00002584"
+            },
+            {
+              "cycle": 61,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 62,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 63,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 64,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 65,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 66,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 67,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 69,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 71,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 74,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 76,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 77,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 79,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 80,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 81,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 82,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 83,
+              "pc_before": "0x000025e0",
+              "instruction": "0x18bfe82e",
+              "pc_after": "0x00002584"
+            },
+            {
+              "cycle": 84,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 86,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 87,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 88,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 89,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 90,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 91,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 93,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 94,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 95,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 96,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 97,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 98,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 99,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 100,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 101,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 102,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 104,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 105,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 106,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 107,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 108,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 109,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 110,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 111,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            },
+            {
+              "cycle": 112,
+              "pc_before": "0x000025e0",
+              "instruction": "0x18bfe82e",
+              "pc_after": "0x00002584"
+            },
+            {
+              "cycle": 113,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 114,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            },
+            {
+              "cycle": 115,
+              "pc_before": "0x000025e0",
+              "instruction": "0x18bfe82e",
+              "pc_after": "0x00002584"
+            },
+            {
+              "cycle": 116,
+              "pc_before": "0x000025dc",
+              "instruction": "0x00c00044",
+              "pc_after": "0x000025e0"
+            }
+          ],
+          "memory_checks": [
+            {
+              "cycle": 0,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 1,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 2,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 3,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 4,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 5,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 6,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 7,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 8,
+              "address": "0x000701c8",
+              "compared_bytes": 256,
+              "sha256": "40ee43fd6bfca6d39f1cd2e129842272cfcac082c2e5aa5240fab3fc8c9f3478"
+            },
+            {
+              "cycle": 9,
+              "address": "0x000cd8bc",
+              "compared_bytes": 256,
+              "sha256": "772ab5225bd2e9cb052e4e8ff532dd26a1de3e9846ced30ba98bd642605cecea"
+            },
+            {
+              "cycle": 10,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 11,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 12,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 13,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 14,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 15,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 16,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 17,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 18,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 19,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 20,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 21,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 22,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 23,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 24,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 25,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 26,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 27,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 28,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 29,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 30,
+              "address": "0x00001e3c",
+              "compared_bytes": 256,
+              "sha256": "1fbf835e86c195744c0f266459b8b38e45e558d807fc69907a0624b9ccc8fc77"
+            },
+            {
+              "cycle": 31,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 32,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 33,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 34,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 35,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 36,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 37,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 38,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 39,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 40,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 41,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 42,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 43,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 44,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 45,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 46,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 47,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 48,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 49,
+              "address": "0x00062c60",
+              "compared_bytes": 256,
+              "sha256": "29faa19f2245c32fa47a9b9121797a868a37a920c2fc82b63ebf57976814b9e3"
+            },
+            {
+              "cycle": 50,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 51,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 52,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 53,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 54,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 55,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 56,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 57,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 58,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 59,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 60,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 61,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 62,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 63,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 64,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 65,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 66,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 67,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 68,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 69,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 70,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 71,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 72,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 73,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 74,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 75,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 76,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 77,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 78,
+              "address": "0x0000195c",
+              "compared_bytes": 256,
+              "sha256": "760fc53f91a9e6dae7efd7112fde362c5c2ba50bf6e27113adc6f4ab80c4b05f"
+            },
+            {
+              "cycle": 79,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 80,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 81,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 82,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 83,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 84,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 85,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 86,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 87,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 88,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 89,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 90,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 91,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 92,
+              "address": "0x00000164",
+              "compared_bytes": 256,
+              "sha256": "0588b1a712aefdfd64f21265d5e8666dc3346e5fd28115c0308bc97b4a96d712"
+            },
+            {
+              "cycle": 93,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 94,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 95,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 96,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 97,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 98,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 99,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 100,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 101,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 102,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 103,
+              "address": "0x00000790",
+              "compared_bytes": 256,
+              "sha256": "15230ae9bc44cae5264d0bada585a1cea5a909f04b73f29407a8a3cda3daa9a3"
+            },
+            {
+              "cycle": 104,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 105,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 106,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 107,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 108,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 109,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 110,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 111,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            },
+            {
+              "cycle": 112,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            },
+            {
+              "cycle": 113,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 114,
+              "address": "0x000025e0",
+              "compared_bytes": 256,
+              "sha256": "9d2b64428055e3191ae7fb81db135946b304aab218e249c844e3ba91d2c87183"
+            },
+            {
+              "cycle": 115,
+              "address": "0x00002584",
+              "compared_bytes": 256,
+              "sha256": "933eb06c7ad74ef444504b94842189d598e7ca99597fea47adb96272042ce88a"
+            }
+          ],
+          "remote_interrupts": 116,
+          "server_log": "Using cable \"USB-Blaster [1-6]\", device 1, instance 0x00\nPausing target processor: OK\nListening on port 55805 for connection from GDB: accepted\n",
+          "exception_chain": "Traceback (most recent call last):\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 308, in run\n    memory_evidence.append(dict(cycle=cycle, **session.checked_memory()))\n                                               ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 169, in checked_memory\n    first = self.__read(address, 256)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 155, in __read\n    reply = self.__exchange(f\"m{address:x},{count:x}\".encode(\"ascii\"))\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 86, in __exchange\n    return self.__reply()\n           ^^^^^^^^^^^^^^\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 91, in __reply\n    first = self.__byte()\n            ^^^^^^^^^^^^^\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 77, in __byte\n    value = self.__connection.recv(1)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^\nTimeoutError: timed out\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 326, in run\n    session.resume()\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 200, in resume\n    if self.__byte() != b\"+\":\n       ^^^^^^^^^^^^^\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 77, in __byte\n    value = self.__connection.recv(1)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^\nTimeoutError: timed out\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/usr/lib/python3.12/urllib/request.py\", line 1344, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nTimeoutError: timed out\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 345, in run\n    if health(host) != baseline:\n       ^^^^^^^^^^^^\n  File \"/home/chris/dev/c64/1541ultimate-tools/tooling/jtag_verify_debug.py\", line 221, in health\n    with urllib.request.urlopen(f\"http://{host}/v1/info\", timeout=3) as response:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 215, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 515, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 532, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 492, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 1373, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 1347, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error timed out>\n",
+          "elapsed_s": 157.16527492401656
+        },
+        {
+          "requirement": "ELECTRICAL",
+          "status": "UNTESTABLE",
+          "safety": "SAFE",
+          "detail": "voltage, edge timing and signal integrity require external instruments"
+        }
+      ],
+      "debugging_suitability": "TRANSPORT_UNTESTABLE"
+    }
+  ]
+}

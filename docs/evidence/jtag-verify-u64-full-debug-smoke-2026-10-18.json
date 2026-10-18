@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-18T08:05:34.828399+00:00",
+  "pyftdi": "0.57.2",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "source_sha256": {
+    "jtag_verify.py": "d4be74e3020a7f3a4350a02bea3c585a5962f325f2ee5804e7518d888ce3df66",
+    "u64ii_jtag.py": "ece3d928d8f815764e9dd71a5de60f0e590dcc93421ac350c29a03dd8ccedf1b",
+    "jtag_verify_debug.py": "f3606949d84c64d3c3d29434349d01b9e00902fd64f1e2385a6bbe905da482dc"
+  },
+  "settings": {
+    "adapter": [],
+    "type": "blaster",
+    "target": [
+      "09fb:6001@1-6=u64"
+    ],
+    "usb_id": [],
+    "list": false,
+    "allow_disruptive": true,
+    "debug_idle": true,
+    "intel_root": "/home/chris/intelFPGA_lite/18.1-cyclone",
+    "debug_health_host": "u64",
+    "debug_cycles": 1,
+    "debug_steps": 1,
+    "cycles": 1,
+    "seed": 1541,
+    "frequency": 3000000,
+    "timeout": 180
+  },
+  "adapters": [
+    {
+      "adapter": {
+        "identifier": "09fb:6001@1-6",
+        "kind": "blaster",
+        "vid": 2555,
+        "pid": 24577,
+        "bus": 1,
+        "address": 3,
+        "ports": [
+          6
+        ],
+        "manufacturer": "Altera",
+        "product": "USB-Blaster",
+        "serial": "FYDK2020",
+        "speed": "full",
+        "descriptor_errors": []
+      },
+      "target": "u64",
+      "backend": "PyFtdi/libusb",
+      "capabilities_basis": "inferred from declared compatible type, not proof of authenticity",
+      "capabilities": [
+        "fixed cable clock",
+        "pin/byte shifts up to 63 bytes"
+      ],
+      "results": [
+        {
+          "requirement": "USB-ID",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "USB descriptors read; authenticity not established"
+        },
+        {
+          "requirement": "JTAG-SCAN",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "IR capture, IDCODE and one-bit BYPASS agree",
+          "covers": [
+            "TAP-ID",
+            "TAP-IR",
+            "TAP-BYPASS",
+            "SHIFT-BITS",
+            "SHIFT-BYTES",
+            "SHIFT-TMS"
+          ],
+          "idcode": "0x02b050dd",
+          "bypass_scans": 72,
+          "compared_bits": 636771,
+          "observed_bit_errors": 0,
+          "elapsed_s": 1.5408533969894052,
+          "bits_per_s": 413258.6534475988,
+          "latency_ms": {
+            "median": 0.9268580470234156,
+            "maximum": 153.92339404206723,
+            "p95": 151.55728603713214
+          },
+          "short_scan_latency_ms": {
+            "median": 0.4304950125515461,
+            "maximum": 0.5174520192667842
+          },
+          "readback_sha256": "527c46021699b5fbf0c71676c99ad9cc2d1a3a35c51110205ad55bc3de1907bd",
+          "requested_hz": null,
+          "configured_hz": null,
+          "physical_clock": "UNVERIFIED: no instrument measurement"
+        },
+        {
+          "requirement": "TRANSPORT-SOAK",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "all scheduled scans completed without retries"
+        },
+        {
+          "requirement": "DEBUG-SESSION",
+          "safety": "DISRUPTIVE",
+          "status": "PASS",
+          "detail": "bounded halt/register/code-read/step/continue/interrupt/resume cycles; no writes or breakpoints",
+          "backend": "Intel Nios II GDB server, Quartus 18.1.0.625",
+          "cycles": 1,
+          "stable_register_reads": 12,
+          "steps": [
+            {
+              "cycle": 0,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            }
+          ],
+          "memory_checks": [
+            {
+              "cycle": 0,
+              "address": "0x000025d8",
+              "compared_bytes": 256,
+              "sha256": "c037bb43b173061aaf0707b0d09fe76247842c3b2a0863772c598b114ba3c585"
+            }
+          ],
+          "remote_interrupts": 1,
+          "required_steps": 1,
+          "skipped_nonpermitted_instructions": 0,
+          "elapsed_s": 1.308162727043964,
+          "health_after_each_resume": "PASS",
+          "firmware_identity": {
+            "product": "Ultimate 64 Elite",
+            "firmware_version": "3.15a",
+            "git_commit_hash": "5d42e1db8",
+            "fpga_version": "126"
+          },
+          "capability_coverage": {
+            "attach_halt": "PASS",
+            "register_reads": "PASS",
+            "code_memory_reads": "PASS",
+            "guarded_hardware_step": "PASS",
+            "remote_continue_interrupt": "PASS",
+            "resume_health": "PASS",
+            "hardware_breakpoints": "UNSUPPORTED in reviewed nios_c5 design: zero slots",
+            "hardware_watchpoints": "UNSUPPORTED in reviewed nios_c5 design: zero data triggers",
+            "software_breakpoints": "PROHIBITED: require program memory modification",
+            "memory_register_writes": "PROHIBITED",
+            "reset_reload": "PROHIBITED",
+            "source_level_step_next_finish": "UNVERIFIED: no matching ELF; no software breakpoint fallback"
+          }
+        },
+        {
+          "requirement": "ELECTRICAL",
+          "status": "UNTESTABLE",
+          "safety": "SAFE",
+          "detail": "voltage, edge timing and signal integrity require external instruments"
+        }
+      ],
+      "debugging_suitability": "DEBUG_SESSION_PASSED"
+    }
+  ]
+}
