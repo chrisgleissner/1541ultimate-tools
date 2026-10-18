@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import types
 import unittest
@@ -131,11 +132,27 @@ class SafetyTest(unittest.TestCase):
         with self.assertRaisesRegex(v.PolicyError, "unexpected target"):
             tap.identify()
         self.assertEqual(model.instructions, [])
+        edges = model.edges
+        with self.assertRaises(v.PolicyError):
+            tap.reset()
+        self.assertEqual(model.edges, edges)
         tap, model, _, _ = transport()
         with patch.object(v.jt.Tap, "dr", return_value=model.code):
             with self.assertRaises(v.PolicyError):
                 tap.identify()  # bad chain tail
         self.assertEqual(model.instructions, [])
+
+    def test_invalid_ir_capture_closes_policy_below_workload(self):
+        tap, model, _, _ = transport()
+        tap.identify()
+        model.bad_capture = True
+        with self.assertRaisesRegex(v.jt.JtagError, "IR capture"):
+            tap.ir((1 << tap.width) - 1, True)
+        edges = model.edges
+        with self.assertRaises(v.PolicyError):
+            tap.idle(1)
+        self.assertEqual(model.edges, edges)
+        self.assertFalse(tap.healthy)
 
     def test_transport_errors_disable_all_further_clocks(self):
         for operation in ("reset", "ir", "dr", "idle"):
@@ -330,6 +347,42 @@ class ReportTest(unittest.TestCase):
             if kind == "ft232h":
                 self.assertEqual(cable.ftdi.set_frequency.call_count, 3)
             self.assertEqual(report["results"][-2]["status"], "UNSUPPORTED" if profile == "c64u" else "UNTESTABLE")
+
+    def test_semantic_mismatch_blocks_cleanup_clocks(self):
+        _, model, _, cable = transport("u64", "blaster")
+        model.bad_capture = True
+        tap = v.SafeTap(cable, "u64")
+        with patch.object(v, "target_lock", return_value=contextlib.nullcontext()), \
+                patch.object(v, "safe_cable", return_value=contextlib.nullcontext(cable)), \
+                patch.object(v, "SafeTap", return_value=tap), \
+                patch.object(tap, "reset", wraps=tap.reset) as reset:
+            report = v.verify(adapter(), "u64", self.args("--cycles", "1"))
+        self.assertEqual(report["debugging_suitability"], "TRANSPORT_FAILED")
+        self.assertEqual(reset.call_count, 1)
+        self.assertFalse(tap.healthy)
+
+    def test_identity_alias_still_performs_chain_validation(self):
+        _, model, _, cable = transport()
+        self.assertEqual(v.SafeTap(cable, "c64u").idcode(), model.code)
+
+    def test_cli_metrics_incomplete_debug_and_real_entry_point(self):
+        a = adapter()
+        _, _, _, cable = transport("u64", "blaster")
+        output = io.StringIO()
+        with patch.object(v, "discover", return_value=[a]), \
+                patch.object(v, "target_lock", return_value=contextlib.nullcontext()), \
+                patch.object(v, "safe_cable", return_value=contextlib.nullcontext(cable)), \
+                patch.object(v, "LENGTHS", (1, 8)), contextlib.redirect_stdout(output):
+            self.assertEqual(v.main(["--cycles", "1", "--target", a.identifier + "=u64"]), 0)
+        self.assertIn("compared bits", output.getvalue())
+        report = {"target": "u64", "results": [{"requirement": "DEBUG-SESSION", "status": "UNVERIFIED", "detail": "stepping unqualified"}],
+                  "debugging_suitability": "TRANSPORT_PASSED_DEBUG_UNVERIFIED"}
+        with patch.object(v, "discover", return_value=[a]), patch.object(v, "verify", return_value=report), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(v.main(["--allow-disruptive"]), 2)
+        result = subprocess.run([sys.executable, v.__file__, "--help"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("live stepping currently disabled", " ".join(result.stdout.split()))
 
     def test_failure_and_no_reset_after_partial_transfer(self):
         _, _, _, cable = transport()

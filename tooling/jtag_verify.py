@@ -117,6 +117,8 @@ class SafeTap:
         try:
             self.__tap.m.tms(0b0011, 4)
             captured = self.__tap._shift(instruction, self.width, read)
+            if read and captured & 3 != 1:
+                raise jt.JtagError(f"IR capture low bits are {captured & 3:02b}, expected 01")
             self.instruction = instruction
             return captured
         except BaseException:
@@ -146,6 +148,7 @@ class SafeTap:
         value = self.dr((1 << 96) - 1, 96, True)
         code = value & 0xFFFFFFFF
         if code & 0x0FFFFFFF not in self.ids or value >> 32 != (1 << 64) - 1:
+            self.healthy = False
             raise PolicyError(f"unexpected target or multi-device chain: 0x{value:024x}")
         self.confirmed = True
         return code
@@ -257,9 +260,7 @@ def exercise(tap, cycles, seed, deadline):
                 raise jt.JtagError(f"suite deadline reached after {scans} scans")
             # Repeated mode switching exercises interactive short transactions
             # between bulk transfers, rather than only a long streaming scan.
-            captured = tap.ir((1 << tap.width) - 1, True)
-            if captured & 3 != 1:
-                raise jt.JtagError(f"IR capture low bits are {captured & 3:02b}, expected 01")
+            tap.ir((1 << tap.width) - 1, True)
             for pattern in (0, (1 << length) - 1, rng.getrandbits(length)):
                 before = time.monotonic()
                 got = tap.dr(pattern, length, True)
@@ -334,6 +335,11 @@ def verify(adapter, profile, args):
                                                  "driver clock configuration accepted; scans checked at this setting",
                                                  requested_hz=frequency, configured_hz=actual))
                     checks.append(result("TRANSPORT-SOAK", "PASS", "all scheduled scans completed without retries"))
+                except BaseException:
+                    # A semantic mismatch also makes the target/transport state
+                    # uncertain; do not clock cleanup through an untrusted path.
+                    tap.healthy = False
+                    raise
                 finally:
                     if tap.healthy:
                         # Only reset the TAP, selecting inert IDCODE, never the CPU.
@@ -379,7 +385,7 @@ def verify(adapter, profile, args):
 def parser():
     p = argparse.ArgumentParser(description=__doc__, epilog=(
         "--target asserts a powered, normally configured, single-device board, correct wiring, "
-        "and a quiescent adapter at a complete command boundary. Never run concurrently with Quartus/debuggers."))
+        "a quiescent adapter at a complete command boundary, and a TAP known to be in Idle or Test-Logic-Reset. Never run concurrently with Quartus/debuggers."))
     p.add_argument("--adapter", action="append", default=[], help="exact stable identifier (repeatable)")
     p.add_argument("--type", choices=("blaster", "ft232h"))
     p.add_argument("--target", action="append", default=[], metavar="ID=PROFILE", help="PROFILE is u64 or c64u; repeatable")

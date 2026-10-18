@@ -44,7 +44,9 @@ Before mapping a target, confirm all of these conditions:
   board reset wiring. The Adafruit I2C switch must be off. No power pin is driven.
 - No debugger, programming operation, logic analyzer or console reader is using
   JTAG. In particular, a USB-Blaster must be at a complete transport command
-  boundary; do not use it after an interrupted or failed programming operation.
+  boundary, and the TAP must be known to be in Run-Test/Idle or Test-Logic-Reset.
+  These are separate preconditions. Do not use it after an interrupted or failed
+  programming/debug operation or when the TAP's starting state is unknown.
 - The FPGA is fully configured (Cyclone V nCONFIG/nSTATUS high). These are physical
   preconditions, not facts the verifier can prove through USB enumeration.
 
@@ -114,8 +116,10 @@ Cyclone V A4 (`u64`, ten-bit IR, ID 02B050DD) and Artix-7 50T/100T
 IDCODE readback must remain stable during a suite. Initial TAP reset selects
 IDCODE; a 96-bit read checks the expected part and the single-device serial
 pipeline before enabling explicit IR scans. This is not general chain discovery.
-TAP reset changes JTAG state; for these configured devices it does not reset the
-processor or reload FPGA configuration. Cleanup returns a healthy TAP to IDCODE.
+TAP reset changes JTAG state; starting from the asserted Idle/reset states on
+these configured devices, it does not reset the processor or reload configuration.
+Reset from an unknown Shift/Exit state can traverse Update-IR/DR and commit a
+previous client's operation; the verifier cannot safely discover that state. Cleanup returns a healthy TAP to IDCODE.
 
 Tests receive a restricted scan interface with no public raw cable or programming
 API. Unknown instructions, unconfirmed targets, invalid lengths, write-only DR
@@ -131,7 +135,8 @@ refuses `U64II_JTAG_LOCK=off`. Unmapped adapters are never opened. The USB-Blast
 open path reuses `Blaster` but omits its normal recovery padding: resynchronizing
 an unknown, partially consumed shift command on a running board is not proven safe.
 
-After uncertain raw-scan transfers the verifier sends no recovery clocks or commands and
+After uncertain raw-scan transfers or semantic mismatches the verifier sends no
+recovery clocks or commands and
 closes with pin levels retained. Automatic recovery could complete an unintended
 instruction. Inspect the connection and quiesce its other users before further
 access. Clean completion uses the existing output-disable release procedures.
@@ -306,6 +311,13 @@ was lost. See the [code-driven investigation](jtag-verify-investigation.md).
 The [post-soak health record](evidence/jtag-verify-post-soak-health-2026-10-18.json)
 preserves the manual continue observations and the unresolved U64 health failure.
 The [final-source SAFE check](evidence/jtag-verify-final-source-2026-10-18.json)
-again passed 72 U64 raw scans/636,771 bits. FT232H passed its parser echo in
-that check, then a target scan timed out; its transport remains unverified. That check did not enter CPU debugging or
+again passed 72 U64 raw scans/636,771 bits. It selected only the clone, whose
+preceding successful verifier run left the TAP in known Idle. The earlier
+[FT232H check](evidence/jtag-verify-before-cleanup-guard-2026-10-18.json) passed
+its parser echo, then a target scan timed out; its transport remains unverified. That check did not enter CPU debugging or
 establish recovery of the U64 network service.
+
+Earlier reports predate the final Idle/reset starting-state clarification and
+semantic-failure cleanup guard. They are historical measurements, not evidence
+that the final safety policy was already in force. No further FT232H target scan
+was attempted under the final policy after its timeout left TAP state uncertain.

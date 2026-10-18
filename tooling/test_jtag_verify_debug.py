@@ -96,6 +96,12 @@ class PolicyTest(unittest.TestCase):
             with self.assertRaises(d.DebugError):
                 d.ram(address, count)
 
+    def test_nonpermitted_memory_length_rejected_before_send(self):
+        connection = Connection()
+        with self.assertRaisesRegex(d.DebugError, 'length is not permitted'):
+            d.DebugSession(connection)._DebugSession__read(0x100, 8)
+        self.assertEqual(connection.sent, [])
+
     @patch.object(d, "STEPPING_QUALIFIED", True)
     def test_steps_compare_full_general_register_file(self):
         connection = Connection()
@@ -193,7 +199,7 @@ class RunTest(unittest.TestCase):
                 d.connect_ready(1234)
 
     @contextlib.contextmanager
-    def fixture(self, banner="Pausing target processor: OK\n", listing=None):
+    def fixture(self, banner="Pausing target processor: OK\n", listing=None, exited=False):
         adapter = types.SimpleNamespace(kind='blaster', vid=0x9fb, pid=0x6001, bus=1, ports=[6])
         processes, connections = [], []
         def start(argv, stdout, stderr):
@@ -204,7 +210,7 @@ class RunTest(unittest.TestCase):
             stdout.write(banner)
             stdout.flush()
             process = Mock()
-            process.poll.return_value = None
+            process.poll.return_value = 0 if exited else None
             process.wait.return_value = 0
             processes.append(process)
             return process
@@ -331,6 +337,33 @@ class RunTest(unittest.TestCase):
                 d.run(adapter, '/intel', 'u64', 1, 1)
             self.assertIn('Pausing target processor', raised.exception.evidence['server_log'])
             self.assertIn('identity/version changed', raised.exception.evidence['exception_chain'])
+
+    def test_step_loop_has_a_hard_instruction_count_limit(self):
+        with self.fixture() as (adapter, _, _), \
+                patch.object(d.time, 'monotonic', return_value=0), \
+                patch.object(d.DebugSession, 'checked_step', return_value={'pc_before': '0x100'}) as step:
+            result = d.run(adapter, '/intel', 'u64', 1, 8)
+        self.assertEqual(step.call_count, 8)
+        self.assertEqual(len(result['steps']), 8)
+
+    def test_remote_interrupt_snapshot_failure_is_preserved_and_resumed(self):
+        registers = [[0] * 33] * 12 + [[1] * 33]
+        with self.fixture() as (adapter, connections, _), \
+                patch.object(d.time, 'monotonic', return_value=0), \
+                patch.object(d.DebugSession, 'checked_step', return_value=None), \
+                patch.object(d.DebugSession, 'checked_memory', return_value={}), \
+                patch.object(d.DebugSession, 'registers', side_effect=registers):
+            with self.assertRaisesRegex(d.DebugRunError, 'after remote interrupt') as raised:
+                d.run(adapter, '/intel', 'u64', 1, 1)
+        self.assertEqual(raised.exception.evidence['remote_interrupts'], 1)
+        self.assertEqual(sum(x.startswith(b'$c#') for x in connections[0].sent), 2)
+        self.assertTrue(connections[0].closed)
+
+    def test_already_exited_server_is_not_terminated(self):
+        with self.fixture(banner='Processor is already paused\n', exited=True) as (adapter, _, processes):
+            with self.assertRaisesRegex(d.DebugRunError, 'already paused'):
+                d.run(adapter, '/intel', 'u64', 1, 1)
+        processes[0].terminate.assert_not_called()
 
     def test_slow_server_process_is_killed_after_detach(self):
         original_mock = Mock
