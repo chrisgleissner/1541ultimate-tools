@@ -7,6 +7,9 @@ U64 processor debug checks provide additional evidence beyond transport scans.
 A cable that programs an FPGA successfully can still fail the mixed short and
 bulk readback traffic exercised here.
 
+For a detailed explanation of each test and the recorded results on both
+connected adapters, read [Tests and hardware results](jtag-verify-tests.md).
+
 ## Running
 
 Use the repository's shared PyFtdi environment:

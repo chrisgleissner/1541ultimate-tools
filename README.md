@@ -545,6 +545,8 @@ explicitly mapped, reviewed targets. It measures sustained and short-transaction
 readback reliability without programming the FPGA or stopping its processor.
 Start with `tooling/jtag_verify.sh --list`; see [usage and safety](docs/jtag-verify.md)
 and the [standards and coverage matrix](docs/jtag-verify-standards.md).
+The [test guide and hardware results](docs/jtag-verify-tests.md) explain what each
+check measures, what passed on the connected adapters, and what remains unverified.
 A passing transport soak leaves processor debugging suitability unverified. An
 explicitly opted-in U64 backend adds repeated register-read, code-read,
 continue/interrupt and resume checks using Intel's Nios II server; C64U CPU stepping is

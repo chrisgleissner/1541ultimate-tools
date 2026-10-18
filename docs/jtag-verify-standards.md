@@ -5,6 +5,9 @@ This is the requirements and evidence map for `tooling/jtag_verify.py`.
 The methods below describe what is established, without duplicating transport
 encodings or the pattern schedule in the implementation.
 
+The companion [test guide](jtag-verify-tests.md) explains each check in plain
+language and walks through the recorded USB-Blaster and FT232H results.
+
 There is no single certificate covering USB-Blaster compatibility, FT232H command
 processing, target JTAG implementation, board electrical quality and debugger
 reliability. The verifier reports evidence for a limited, safe subset. It never
