@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-18T06:55:52.531281+00:00",
+  "pyftdi": "0.57.2",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "source_sha256": {
+    "jtag_verify.py": "ed2e95d8957053709b64bd2ce35d903fb1f2a25646ed2d3a0ca18f515717daf0",
+    "u64ii_jtag.py": "019d313d49f012aafb53b8a62af031e9a985631dfcd9c7379eb34e65c00ce6fd"
+  },
+  "settings": {
+    "adapter": [],
+    "type": null,
+    "target": [
+      "09fb:6001@1-6=u64",
+      "0403:6014@5-1.4=c64u"
+    ],
+    "usb_id": [],
+    "list": false,
+    "allow_disruptive": false,
+    "cycles": 100,
+    "seed": 1541,
+    "frequency": 3000000,
+    "timeout": 600.0
+  },
+  "adapters": [
+    {
+      "adapter": {
+        "identifier": "09fb:6001@1-6",
+        "kind": "blaster",
+        "vid": 2555,
+        "pid": 24577,
+        "bus": 1,
+        "address": 3,
+        "ports": [
+          6
+        ],
+        "manufacturer": "Altera",
+        "product": "USB-Blaster",
+        "serial": "FYDK2020",
+        "speed": "full",
+        "descriptor_errors": []
+      },
+      "target": "u64",
+      "backend": "PyFtdi/libusb",
+      "capabilities_basis": "inferred from declared compatible type, not proof of authenticity",
+      "capabilities": [
+        "fixed cable clock",
+        "pin/byte shifts up to 63 bytes"
+      ],
+      "results": [
+        {
+          "requirement": "USB-ID",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "USB descriptors read; authenticity not established"
+        },
+        {
+          "requirement": "JTAG-SCAN",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "IR capture, IDCODE and one-bit BYPASS agree",
+          "covers": [
+            "TAP-ID",
+            "TAP-IR",
+            "TAP-BYPASS",
+            "SHIFT-BITS",
+            "SHIFT-BYTES",
+            "SHIFT-TMS"
+          ],
+          "idcode": "0x02b050dd",
+          "bypass_scans": 7200,
+          "compared_bits": 63677100,
+          "observed_bit_errors": 0,
+          "elapsed_s": 154.5269307399867,
+          "bits_per_s": 412077.6857151565,
+          "latency_ms": {
+            "median": 1.3312645605765283,
+            "maximum": 202.07663089968264,
+            "p95": 152.33626996632665
+          },
+          "short_scan_latency_ms": {
+            "median": 0.4203230491839349,
+            "maximum": 3.6673860158771276
+          },
+          "readback_sha256": "2eba1b01a2afe42e9ee46ff25988d1ae4becf82bc65d5636de64a3f78c135829",
+          "requested_hz": null,
+          "configured_hz": null,
+          "physical_clock": "UNVERIFIED: no instrument measurement"
+        },
+        {
+          "requirement": "TRANSPORT-SOAK",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "all scheduled scans completed without retries"
+        },
+        {
+          "requirement": "DEBUG-SESSION",
+          "status": "UNVERIFIED",
+          "safety": "DISRUPTIVE",
+          "detail": "no reviewed halt/resume restoration procedure; opt-in cannot override this"
+        },
+        {
+          "requirement": "ELECTRICAL",
+          "status": "UNTESTABLE",
+          "safety": "SAFE",
+          "detail": "voltage, edge timing and signal integrity require external instruments"
+        }
+      ],
+      "debugging_suitability": "TRANSPORT_PASSED_DEBUG_UNVERIFIED"
+    },
+    {
+      "adapter": {
+        "identifier": "0403:6014@5-1.4",
+        "kind": "ft232h",
+        "vid": 1027,
+        "pid": 24596,
+        "bus": 5,
+        "address": 4,
+        "ports": [
+          1,
+          4
+        ],
+        "manufacturer": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff",
+        "product": "\uffff\uffff\uffff\uffff\uffff\uffff",
+        "serial": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff",
+        "speed": "high",
+        "descriptor_errors": []
+      },
+      "target": "c64u",
+      "backend": "PyFtdi/libusb",
+      "capabilities_basis": "inferred from declared compatible type, not proof of authenticity",
+      "capabilities": [
+        "MPSSE",
+        "programmable clock",
+        "bit/byte/TMS shifts"
+      ],
+      "results": [
+        {
+          "requirement": "USB-ID",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "USB descriptors read; authenticity not established"
+        },
+        {
+          "requirement": "FT-SYNC",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "documented bad-command echo; no target clocks"
+        },
+        {
+          "requirement": "JTAG-SCAN",
+          "status": "ERROR",
+          "safety": "SAFE",
+          "detail": "FtdiError: UsbError: [Errno 110] Operation timed out"
+        },
+        {
+          "requirement": "DEBUG-SESSION",
+          "status": "UNVERIFIED",
+          "safety": "DISRUPTIVE",
+          "detail": "c64u permits SAFE tests only"
+        },
+        {
+          "requirement": "ELECTRICAL",
+          "status": "UNTESTABLE",
+          "safety": "SAFE",
+          "detail": "voltage, edge timing and signal integrity require external instruments"
+        }
+      ],
+      "debugging_suitability": "TRANSPORT_UNTESTABLE"
+    }
+  ]
+}

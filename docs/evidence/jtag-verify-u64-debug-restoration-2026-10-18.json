@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-18T07:59:10.651710+00:00",
+  "pyftdi": "0.57.2",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "source_sha256": {
+    "jtag_verify.py": "2285b5cf0d2d09753850d45da268007618afc1e42314a1f6079a422a6e4079a4",
+    "u64ii_jtag.py": "ece3d928d8f815764e9dd71a5de60f0e590dcc93421ac350c29a03dd8ccedf1b",
+    "jtag_verify_debug.py": "c373ccb49eae104debf4c5e006926fd074476668bb6afc7e614a75f9ee4d8bca"
+  },
+  "settings": {
+    "adapter": [],
+    "type": "blaster",
+    "target": [
+      "09fb:6001@1-6=u64"
+    ],
+    "usb_id": [],
+    "list": false,
+    "allow_disruptive": true,
+    "debug_idle": true,
+    "intel_root": "/home/chris/intelFPGA_lite/18.1-cyclone",
+    "debug_health_host": "u64",
+    "debug_cycles": 1,
+    "debug_steps": 1,
+    "cycles": 1,
+    "seed": 1541,
+    "frequency": 3000000,
+    "timeout": 180
+  },
+  "adapters": [
+    {
+      "adapter": {
+        "identifier": "09fb:6001@1-6",
+        "kind": "blaster",
+        "vid": 2555,
+        "pid": 24577,
+        "bus": 1,
+        "address": 3,
+        "ports": [
+          6
+        ],
+        "manufacturer": "Altera",
+        "product": "USB-Blaster",
+        "serial": "FYDK2020",
+        "speed": "full",
+        "descriptor_errors": []
+      },
+      "target": "u64",
+      "backend": "PyFtdi/libusb",
+      "capabilities_basis": "inferred from declared compatible type, not proof of authenticity",
+      "capabilities": [
+        "fixed cable clock",
+        "pin/byte shifts up to 63 bytes"
+      ],
+      "results": [
+        {
+          "requirement": "USB-ID",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "USB descriptors read; authenticity not established"
+        },
+        {
+          "requirement": "JTAG-SCAN",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "IR capture, IDCODE and one-bit BYPASS agree",
+          "covers": [
+            "TAP-ID",
+            "TAP-IR",
+            "TAP-BYPASS",
+            "SHIFT-BITS",
+            "SHIFT-BYTES",
+            "SHIFT-TMS"
+          ],
+          "idcode": "0x02b050dd",
+          "bypass_scans": 72,
+          "compared_bits": 636771,
+          "observed_bit_errors": 0,
+          "elapsed_s": 1.5722558270208538,
+          "bits_per_s": 405004.70028886345,
+          "latency_ms": {
+            "median": 0.965430517680943,
+            "maximum": 166.4378650020808,
+            "p95": 152.62353199068457
+          },
+          "short_scan_latency_ms": {
+            "median": 0.43673801701515913,
+            "maximum": 0.5855789640918374
+          },
+          "readback_sha256": "527c46021699b5fbf0c71676c99ad9cc2d1a3a35c51110205ad55bc3de1907bd",
+          "requested_hz": null,
+          "configured_hz": null,
+          "physical_clock": "UNVERIFIED: no instrument measurement"
+        },
+        {
+          "requirement": "TRANSPORT-SOAK",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "all scheduled scans completed without retries"
+        },
+        {
+          "requirement": "DEBUG-SESSION",
+          "safety": "DISRUPTIVE",
+          "status": "PASS",
+          "detail": "bounded attach/register-read/hardware-step/explicit-continue cycles; no memory writes or breakpoints",
+          "backend": "Intel Nios II GDB server, Quartus 18.1.0.625",
+          "cycles": 1,
+          "stable_register_reads": 10,
+          "steps": [
+            {
+              "cycle": 0,
+              "pc_before": "0x00002588",
+              "instruction": "0x10001326",
+              "pc_after": "0x000025d8"
+            }
+          ],
+          "required_steps": 1,
+          "skipped_nonpermitted_instructions": 0,
+          "elapsed_s": 1.003996068960987,
+          "health_after_each_resume": "PASS",
+          "firmware_identity": {
+            "product": "Ultimate 64 Elite",
+            "firmware_version": "3.15a",
+            "git_commit_hash": "5d42e1db8",
+            "fpga_version": "126"
+          }
+        },
+        {
+          "requirement": "ELECTRICAL",
+          "status": "UNTESTABLE",
+          "safety": "SAFE",
+          "detail": "voltage, edge timing and signal integrity require external instruments"
+        }
+      ],
+      "debugging_suitability": "DEBUG_SESSION_PASSED"
+    }
+  ]
+}

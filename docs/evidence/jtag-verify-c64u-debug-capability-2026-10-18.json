@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-18T07:16:49.524303+00:00",
+  "pyftdi": "0.57.2",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "source_sha256": {
+    "jtag_verify.py": "491de580b2e1775bdd034fd737e420349ec3dbd7e8a0875ccfc2cf216f8f9282",
+    "u64ii_jtag.py": "ece3d928d8f815764e9dd71a5de60f0e590dcc93421ac350c29a03dd8ccedf1b",
+    "jtag_verify_debug.py": "43d8455309794b15a0c1a6ad994bcc5089a2c514a4be9a9724571467a8109801"
+  },
+  "settings": {
+    "adapter": [],
+    "type": "ft232h",
+    "target": [
+      "0403:6014@5-1.4=c64u"
+    ],
+    "usb_id": [],
+    "list": false,
+    "allow_disruptive": true,
+    "debug_idle": false,
+    "intel_root": null,
+    "debug_health_host": null,
+    "debug_cycles": 10,
+    "debug_steps": 8,
+    "cycles": 1,
+    "seed": 1541,
+    "frequency": 3000000,
+    "timeout": 180
+  },
+  "adapters": [
+    {
+      "adapter": {
+        "identifier": "0403:6014@5-1.4",
+        "kind": "ft232h",
+        "vid": 1027,
+        "pid": 24596,
+        "bus": 5,
+        "address": 4,
+        "ports": [
+          1,
+          4
+        ],
+        "manufacturer": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff",
+        "product": "\uffff\uffff\uffff\uffff\uffff\uffff",
+        "serial": "\uffff\uffff\uffff\uffff\uffff\uffff\uffff\uffff",
+        "speed": "high",
+        "descriptor_errors": []
+      },
+      "target": "c64u",
+      "backend": "PyFtdi/libusb",
+      "capabilities_basis": "inferred from declared compatible type, not proof of authenticity",
+      "capabilities": [
+        "MPSSE",
+        "programmable clock",
+        "bit/byte/TMS shifts"
+      ],
+      "results": [
+        {
+          "requirement": "USB-ID",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "USB descriptors read; authenticity not established"
+        },
+        {
+          "requirement": "FT-SYNC",
+          "status": "ERROR",
+          "safety": "SAFE",
+          "detail": "JtagError: MPSSE command echo mismatch: fa00"
+        },
+        {
+          "requirement": "DEBUG-SESSION",
+          "status": "UNSUPPORTED",
+          "safety": "DISRUPTIVE",
+          "detail": "CPU has no JTAG halt/step interface; c64u permits SAFE tests only"
+        },
+        {
+          "requirement": "ELECTRICAL",
+          "status": "UNTESTABLE",
+          "safety": "SAFE",
+          "detail": "voltage, edge timing and signal integrity require external instruments"
+        }
+      ],
+      "debugging_suitability": "TRANSPORT_UNTESTABLE"
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-18T07:56:30.183370+00:00",
+  "pyftdi": "0.57.2",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "source_sha256": {
+    "jtag_verify.py": "491de580b2e1775bdd034fd737e420349ec3dbd7e8a0875ccfc2cf216f8f9282",
+    "u64ii_jtag.py": "ece3d928d8f815764e9dd71a5de60f0e590dcc93421ac350c29a03dd8ccedf1b",
+    "jtag_verify_debug.py": "40f790c6aa611f6ebf952c8af9778a72700a61fbe226bbba7d7b8234e038c312"
+  },
+  "settings": {
+    "adapter": [],
+    "type": "blaster",
+    "target": [
+      "09fb:6001@1-6=u64"
+    ],
+    "usb_id": [],
+    "list": false,
+    "allow_disruptive": true,
+    "debug_idle": true,
+    "intel_root": "/home/chris/intelFPGA_lite/18.1-cyclone",
+    "debug_health_host": "u64",
+    "debug_cycles": 1,
+    "debug_steps": 1,
+    "cycles": 1,
+    "seed": 1541,
+    "frequency": 3000000,
+    "timeout": 180
+  },
+  "adapters": [
+    {
+      "adapter": {
+        "identifier": "09fb:6001@1-6",
+        "kind": "blaster",
+        "vid": 2555,
+        "pid": 24577,
+        "bus": 1,
+        "address": 3,
+        "ports": [
+          6
+        ],
+        "manufacturer": "Altera",
+        "product": "USB-Blaster",
+        "serial": "FYDK2020",
+        "speed": "full",
+        "descriptor_errors": []
+      },
+      "target": "u64",
+      "backend": "PyFtdi/libusb",
+      "capabilities_basis": "inferred from declared compatible type, not proof of authenticity",
+      "capabilities": [
+        "fixed cable clock",
+        "pin/byte shifts up to 63 bytes"
+      ],
+      "results": [
+        {
+          "requirement": "USB-ID",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "USB descriptors read; authenticity not established"
+        },
+        {
+          "requirement": "JTAG-SCAN",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "IR capture, IDCODE and one-bit BYPASS agree",
+          "covers": [
+            "TAP-ID",
+            "TAP-IR",
+            "TAP-BYPASS",
+            "SHIFT-BITS",
+            "SHIFT-BYTES",
+            "SHIFT-TMS"
+          ],
+          "idcode": "0x02b050dd",
+          "bypass_scans": 72,
+          "compared_bits": 636771,
+          "observed_bit_errors": 0,
+          "elapsed_s": 1.5112401529913768,
+          "bits_per_s": 421356.59163076343,
+          "latency_ms": {
+            "median": 0.9549995302222669,
+            "maximum": 151.83378104120493,
+            "p95": 148.95751397125423
+          },
+          "short_scan_latency_ms": {
+            "median": 0.38879294879734516,
+            "maximum": 0.5588250933215022
+          },
+          "readback_sha256": "527c46021699b5fbf0c71676c99ad9cc2d1a3a35c51110205ad55bc3de1907bd",
+          "requested_hz": null,
+          "configured_hz": null,
+          "physical_clock": "UNVERIFIED: no instrument measurement"
+        },
+        {
+          "requirement": "TRANSPORT-SOAK",
+          "status": "PASS",
+          "safety": "SAFE",
+          "detail": "all scheduled scans completed without retries"
+        },
+        {
+          "requirement": "DEBUG-SESSION",
+          "status": "ERROR",
+          "safety": "DISRUPTIVE",
+          "detail": "URLError: <urlopen error timed out>"
+        },
+        {
+          "requirement": "ELECTRICAL",
+          "status": "UNTESTABLE",
+          "safety": "SAFE",
+          "detail": "voltage, edge timing and signal integrity require external instruments"
+        }
+      ],
+      "debugging_suitability": "TRANSPORT_UNTESTABLE"
+    }
+  ]
+}

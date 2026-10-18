@@ -824,7 +824,7 @@ class MpsseTest(unittest.TestCase):
         ftdi = RecordingFtdi()
         m = jt.Mpsse(ftdi)
         m.tms(1, 1, read=True)
-        m.release()
+        self.assertTrue(m.release())
         self.assertEqual(ftdi.writes, [bytes((jt.OP_SET_LOW, 0, 0))])
         self.assertTrue(ftdi.closed)
         self.assertEqual((m.pending, m.expect), (bytearray(), 0))
@@ -832,8 +832,8 @@ class MpsseTest(unittest.TestCase):
     def test_release_still_closes_a_failed_adapter(self):
         ftdi = RecordingFtdi()
         ftdi.fail_writes = True
-        jt.Mpsse(ftdi).release()
-        self.assertIsNone(ftdi.closed)                 # plain close, no freeze
+        self.assertFalse(jt.Mpsse(ftdi).release())
+        self.assertTrue(ftdi.closed)                   # retain pins after failed disable
 
     def test_flush_with_nothing_queued_writes_nothing(self):
         ftdi = RecordingFtdi()
