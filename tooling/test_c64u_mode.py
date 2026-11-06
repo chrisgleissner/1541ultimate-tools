@@ -17,12 +17,15 @@ import subprocess
 import sys
 import tempfile
 import threading
+import hashlib
 import time
 import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import c64u_mode as cm  # noqa: E402
+
+LOG = cm.log  # the real log(); Base patches cm.log
 
 SIZE = 64 * 1024
 CODE = 16 * 1024
@@ -158,6 +161,14 @@ class FlashStoreTest(Base):
         path = self.save("x", image(3, 4))
         self.assertEqual(cm.sha256(path, CODE), cm.sha256(self.save("y", bytes([3]) * CODE)))
         self.assertNotEqual(cm.sha256(path), cm.sha256(path, CODE))
+
+    def test_sha256_limit_across_chunks(self):
+        path = os.path.join(self.tmp.name, "big.bin")
+        with open(path, "wb") as f:
+            f.write(bytes(range(256)) * 12288)                                # 3 MiB, read in 1 MiB chunks
+        with open(path, "rb") as f:
+            head = f.read(2621440)
+        self.assertEqual(cm.sha256(path, 2621440), hashlib.sha256(head).hexdigest())
 
 
 class SnapshotTest(Base):
@@ -330,6 +341,15 @@ class BoardTest(Base):
                 mock.patch.object(cm.subprocess, "run") as run, mock.patch.dict(os.environ, {"C64U_MODE_NOTIFY": "1"}):
             b.notify("hi")
         run.assert_called_once()
+        with mock.patch.object(cm.shutil, "which", return_value="/usr/bin/notify-send"), \
+                mock.patch.object(cm.subprocess, "run") as run, mock.patch.dict(os.environ, {"C64U_MODE_NOTIFY": "0"}):
+            b.notify("quiet")
+        run.assert_not_called()
+
+    def test_log_prints_with_the_prefix(self):
+        with mock.patch("builtins.print") as out:
+            LOG("x")
+        out.assert_called_once_with("[c64u-mode] x", flush=True)
 
     def test_find_current(self):
         self.assertEqual(cm._find_current({"a": {"b": {"current": "On"}}}), "On")
@@ -377,6 +397,13 @@ class PowerCycleTest(Base):
         self.assertEqual(self.runner.commands()[-1], "powerctl cycle")
         self.assertIn("C64U", self.runner.calls[-1])
         self.assertIsNotNone(self.store.get("power_on_seen"))
+
+    def test_rest_poweroff_without_a_state_store(self):
+        info = iter([(200, {}), (None, "")])
+        b = FakeBoard(config(), run=FakeRunner(), allow_power_cycle=True, state=None,
+                      answers={POWER: (200, {"x": {"current": "On"}}), ("GET", "/v1/info"): lambda: next(info)})
+        b.power_cycle()
+        self.assertIn(("PUT", "/v1/machine:poweroff"), b.requests)
 
     def test_setting_off_refuses(self):
         b = self.board({POWER: (200, {"current": "Off"})})
@@ -443,6 +470,10 @@ class LockTest(Base):
 
     def test_ancestors(self):
         self.assertIn(os.getppid(), cm._ancestors())
+
+    def test_ancestors_stop_at_an_unreadable_process(self):
+        with mock.patch("builtins.open", side_effect=OSError("gone")):
+            self.assertEqual(cm._ancestors(), {os.getppid()})
 
 
 # ---- modes, ensure, plugins, desktop, main ----------------------------------------------------------------------------
@@ -553,6 +584,16 @@ class DesktopTest(Base):
         self.assertEqual(run.call_count, 2)                                   # kwriteconfig6 and update-desktop-database
         self.assertEqual(cm.install_desktop(cfg, "x", apps_dir=d, dry_run=True), [path])
 
+    def test_mode_without_a_hotkey_and_no_kde_tools(self):
+        cfg = config()
+        cfg["modes"]["stock"] = "flash:stock"
+        d = os.path.join(self.tmp.name, "apps")
+        with mock.patch.object(cm.shutil, "which", return_value=None), mock.patch.object(cm.subprocess, "run") as run:
+            [path] = cm.install_desktop(cfg, "/usr/bin/c64u-mode", apps_dir=d)
+        with open(path) as f:
+            self.assertNotIn("X-KDE-Shortcuts", f.read())
+        run.assert_not_called()
+
 
 class MainTest(Base):
     def setUp(self):
@@ -588,6 +629,8 @@ class MainTest(Base):
     def test_check_power(self):
         self.assertEqual(self.main("check-power"), 1)
         self.answers[POWER] = (200, {"current": "On"})
+        self.assertEqual(self.main("check-power", "--dry-run"), 0)
+        self.assertIsNone(self.store.get("power_on_seen"))
         self.assertEqual(self.main("check-power"), 0)
         self.assertIsNotNone(self.store.get("power_on_seen"))
 
