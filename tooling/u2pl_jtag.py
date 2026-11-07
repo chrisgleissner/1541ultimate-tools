@@ -51,6 +51,9 @@ from u64ii_jtag import DeviceLock
 #   8 MiB part; that is why FLASH_SIZE is fixed rather than probed.
 
 U2L_EXTENSION = ".u2l"
+# The tools repository, not the firmware checkout the tools were installed into: that has its own README.
+WIRING_URL = "https://github.com/chrisgleissner/1541ultimate-tools#uiil-ft232h-jtag-wiring"
+
 OUTER_LOAD_ADDRESS = 0x03000000
 RUNTIME_LOAD_ADDRESS = 0x00030000
 BOOT_FPGA_OFFSET = 0x000000
@@ -754,7 +757,7 @@ def preflight(args: argparse.Namespace) -> int:
         for problem in problems:
             print("  - " + problem)
         return 1
-    print("\nHost preflight passed. Follow README.md's UII+L wiring instructions before probing.")
+    print(f"\nHost preflight passed. Follow the UII+L wiring instructions ({WIRING_URL}) before probing.")
     return 0
 
 
@@ -839,7 +842,7 @@ def print_plan(
 
     print("\nBefore connecting the FT232H:")
     print("  D0 -> TCK, D1 -> TDI, D2 <- TDO, D3 -> TMS, GND -> a measured ground pin.")
-    print("  See README.md#uiil-ft232h-jtag-wiring for the WiFi-header pin mapping.")
+    print(f"  See {WIRING_URL} for the WiFi-header pin mapping.")
     print("  Confirm ground with a multimeter before applying power.")
     print("  Set FT232H I2C MODE to OFF. Adafruit FT232H D0-D3 outputs are fixed at 3.3 V.")
     print("  Do not connect the FT232H 3V power-output pin; power the U2+L normally through the C64.")

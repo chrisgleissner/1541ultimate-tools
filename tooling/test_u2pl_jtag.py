@@ -372,6 +372,12 @@ class HardwareWorkflowTests(unittest.TestCase):
             preflight.assert_called_once()
         self.probe.assert_not_called()
 
+    def test_plan_links_the_wiring_section_of_the_tools_repository(self):
+        self.assertEqual(self.main(), 0)
+        self.assertIn("See https://github.com/chrisgleissner/1541ultimate-tools#uiil-ft232h-jtag-wiring "
+                      "for the WiFi-header pin mapping.", self.stdout.getvalue())
+        self.assertNotIn("README.md", self.stdout.getvalue())
+
     def test_probe_interrupts_fpga_but_never_programs(self):
         self.assertEqual(self.main("--probe"), 0)
         self.probe.assert_called_once()
@@ -602,6 +608,17 @@ class HostPreflightTests(unittest.TestCase):
              patch.object(tool.os, "access", return_value=writable), \
              contextlib.redirect_stdout(io.StringIO()):
             return tool.preflight(self.args)
+
+    def test_success_message_links_the_tools_repository_readme(self):
+        out = io.StringIO()
+        with patch.object(tool.shutil, "which", return_value="/bin/ecpprog"), \
+             patch.object(tool.subprocess, "run", return_value=SimpleNamespace(stdout="libftdi.so => /lib/libftdi.so")), \
+             patch.object(tool, "usb_devices", return_value=[self.device]), \
+             patch.object(tool.os, "access", return_value=True), \
+             contextlib.redirect_stdout(out):
+            self.assertEqual(tool.preflight(self.args), 0)
+        self.assertIn("(https://github.com/chrisgleissner/1541ultimate-tools#uiil-ft232h-jtag-wiring)", out.getvalue())
+        self.assertNotIn("README.md", out.getvalue())
 
     def test_missing_programmer_and_adapter(self):
         self.assertEqual(self.preflight("", executable=None, devices=[]), 1)
