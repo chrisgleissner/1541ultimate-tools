@@ -10,7 +10,9 @@ and a worktree's checkout works like a plain one.
     python3 -m unittest discover -s tests -p 'test_install.py'
 """
 
+import hashlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -147,6 +149,143 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=worktree), "")
         self.assertIn("/tooling/", self.excludes(worktree))
+
+    # The agent guide: AGENTS.md and CLAUDE.md at the top of the checkout.
+
+    def read(self, *parts):
+        with open(self.path(*parts)) as handle:
+            return handle.read()
+
+    def write(self, name, text):
+        with open(self.path(name), "w") as handle:
+            handle.write(text)
+
+    def guide_backups(self, name="AGENTS.md"):
+        return sorted(n for n in os.listdir(self.checkout) if n.startswith(name + ".local-"))
+
+    def test_guide_is_installed_excluded_and_recorded(self):
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        agents = self.read("AGENTS.md")
+        self.assertIn("1541 Ultimate: agent guide", agents)
+        self.assertNotIn("{{TOOLS_REF}}", agents)
+        self.assertRegex(agents, r"1541ultimate-tools/blob/(v[0-9.]+|[0-9a-f]+)/docs/")
+        self.assertIn("@AGENTS.md", self.read("CLAUDE.md"))
+        for name in ("AGENTS.md", "CLAUDE.md"):
+            self.assertIn("/" + name, self.excludes())
+            self.assertIn("/" + name + ".local-*", self.excludes())
+        self.assertIn("/.1541ultimate-tools-guide", self.excludes())
+        record = self.read(".1541ultimate-tools-guide")
+        digest = hashlib.sha256(agents.encode()).hexdigest()
+        self.assertIn(f"{digest}  AGENTS.md", record)
+        for name in os.listdir(os.path.join(TOOLS, "docs", "agents")):
+            with self.subTest(doc=name):
+                self.assertTrue(os.path.isfile(self.path("tooling", "docs", "agents", name)))
+        self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=self.checkout), "")
+        self.assertEqual(self.guide_backups(), [])
+
+    def test_guide_absent_is_installed_and_second_run_is_silent(self):
+        self.assertEqual(self.install().returncode, 0)
+        before = self.read("AGENTS.md")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.read("AGENTS.md"), before)
+        self.assertEqual(self.guide_backups(), [])
+        self.assertEqual(self.guide_backups("CLAUDE.md"), [])
+
+    def test_unchanged_copy_of_an_earlier_install_is_replaced_silently(self):
+        self.assertEqual(self.install().returncode, 0)
+        # An earlier release wrote this text and recorded its digest.
+        old = "older shipped guide\n"
+        self.write("AGENTS.md", old)
+        with open(self.path(".1541ultimate-tools-guide"), "w") as handle:
+            handle.write(f"{hashlib.sha256(old.encode()).hexdigest()}  AGENTS.md\n")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("1541 Ultimate: agent guide", self.read("AGENTS.md"))
+        self.assertEqual(self.guide_backups(), [])
+
+    def test_edited_or_handwritten_guide_is_moved_aside_never_lost(self):
+        self.write("AGENTS.md", "my own guide\n")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        backups = self.guide_backups()
+        self.assertEqual(len(backups), 1)
+        self.assertRegex(backups[0], r"^AGENTS\.md\.local-\d{8}-\d{6}$")
+        self.assertEqual(self.read(backups[0]), "my own guide\n")
+        self.assertIn("1541 Ultimate: agent guide", self.read("AGENTS.md"))
+        self.assertIn(backups[0], result.stdout)
+        self.assertIn(self.path("AGENTS.md"), result.stdout)
+        self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=self.checkout), "")
+        # A local edit of an installed copy is kept the same way on the next install.
+        self.write("AGENTS.md", self.read("AGENTS.md") + "local addition\n")
+        self.assertEqual(self.install().returncode, 0)
+        self.assertEqual(len(self.guide_backups()), 2)
+
+    def test_tracked_guide_is_left_alone_with_a_warning(self):
+        self.write("AGENTS.md", "tracked upstream\n")
+        git("add", "AGENTS.md", cwd=self.checkout)
+        git("commit", "-qm", "track AGENTS.md", cwd=self.checkout)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.read("AGENTS.md"), "tracked upstream\n")
+        self.assertIn("tracks AGENTS.md", result.stderr)
+        self.assertIn(os.path.join(TOOLS, "checkout", "AGENTS.md"), result.stderr)
+        self.assertNotIn("/AGENTS.md", self.excludes())
+        self.assertEqual(self.guide_backups(), [])
+        self.assertIn("@AGENTS.md", self.read("CLAUDE.md"))      # the other file is unaffected
+        self.assertNotIn("  AGENTS.md", self.read(".1541ultimate-tools-guide"))
+
+    def test_dry_run_reports_each_guide_case_and_changes_nothing(self):
+        result = self.install("--dry-run")
+        self.assertIn("AGENTS.md: absent", result.stdout)
+        self.assertFalse(os.path.exists(self.path("AGENTS.md")))
+        self.write("AGENTS.md", "mine\n")
+        result = self.install("--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("AGENTS.md: differs from the shipped copy; would move it to", result.stdout)
+        self.assertEqual(self.read("AGENTS.md"), "mine\n")
+        self.assertEqual(self.guide_backups(), [])
+        self.assertIn("AGENTS.local.md does not exist", result.stdout)
+        self.write("AGENTS.local.md", "notes\n")
+        self.assertIn("AGENTS.local.md exists; left as it is", self.install("--dry-run").stdout)
+        self.assertNotIn("/AGENTS.local.md", self.excludes())
+        self.assertFalse(os.path.exists(self.path(".1541ultimate-tools-guide")))
+
+    def test_local_overlay_is_excluded_and_never_touched(self):
+        self.write("AGENTS.local.md", "private notes\n")
+        self.assertEqual(self.install().returncode, 0)
+        self.assertIn("/AGENTS.local.md", self.excludes())
+        self.assertEqual(self.read("AGENTS.local.md"), "private notes\n")
+        self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=self.checkout), "")
+        self.assertEqual(self.guide_backups(), [])
+
+    def test_local_overlay_symlink_is_left_as_it_is(self):
+        target = os.path.join(self.tmp, "elsewhere.md")
+        with open(target, "w") as handle:
+            handle.write("outside the checkout\n")
+        os.symlink(target, self.path("AGENTS.local.md"))
+        self.assertEqual(self.install().returncode, 0)
+        self.assertTrue(os.path.islink(self.path("AGENTS.local.md")))
+        self.assertEqual(os.readlink(self.path("AGENTS.local.md")), target)
+        with open(target) as handle:
+            self.assertEqual(handle.read(), "outside the checkout\n")
+
+    def test_local_overlay_is_never_created(self):
+        self.assertEqual(self.install().returncode, 0)
+        self.assertFalse(os.path.lexists(self.path("AGENTS.local.md")))
+
+    def test_example_template_has_headings_only(self):
+        with open(os.path.join(TOOLS, "docs", "agents", "AGENTS.local.example.md")) as handle:
+            text = handle.read()
+        self.assertNotRegex(text, r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
+        self.assertNotIn("/home/", text)
+        for heading in ("Devices and addresses", "Power control and safety",
+                        "Other trees and repositories", "Local build quirks"):
+            self.assertIn("## " + heading, text)
+        body = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+        prose = [l for l in body.splitlines()[1:] if l.strip() and not l.startswith("## ")]
+        self.assertEqual(len(prose), 1, prose)       # the one introductory paragraph
 
     def test_dry_run_changes_nothing(self):
         result = self.install("--dry-run")

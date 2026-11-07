@@ -126,8 +126,11 @@ To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
 - **Copies the tools:** `build`, `build.cmd`, `build-tool`, `build-tool.d/`,
   `.build-tool.env.example` and the tools in `tooling/` into the checkout, and makes
   the scripts executable.
-- **Does not copy anything else:** not this README, `docs/`, the logo, the tests,
-  `vivado/` or `patches/`.
+- **Installs the agent guide:** `AGENTS.md` and `CLAUDE.md` (which imports `AGENTS.md`)
+  at the top of the checkout, and the procedures the guide links in
+  `tooling/docs/agents/`. They are hidden from git like the tools.
+- **Does not copy anything else:** not this README, the other `docs/`, the logo, the
+  tests, `vivado/` or `patches/`.
 - **Records the version** in `.1541ultimate-tools-version`: the release number, or
   for a development install the version plus the commit, such as `<version>+g<commit>`.
 - **Hides the tools from git:** it lists each installed path in the checkout's
@@ -141,6 +144,15 @@ To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
     it never overwrites a tracked file.
   - A second run adds no duplicate entries.
   - It works in git worktrees.
+
+The guide files are never overwritten blindly. A tracked `AGENTS.md` or `CLAUDE.md` is
+left alone with a warning. An untracked one that equals the shipped copy, or the copy
+the previous install wrote (recorded by checksum in `.1541ultimate-tools-guide`), is
+replaced. Any other untracked one is first moved to `AGENTS.md.local-<time>`, which git
+also ignores. Machine-specific notes belong in `AGENTS.local.md`: the guide tells agents
+to read it, and the installer only excludes it from git and never creates or changes it
+(template: `docs/agents/AGENTS.local.example.md`). `--dry-run` reports what would happen
+to each of these files.
 
 It refuses a directory that is not the top of a git checkout with the 1541ultimate
 layout (`software/` and `target/`). A newer release overwrites the files it ships; a
@@ -478,6 +490,8 @@ git -C "$ULTIMATE" checkout Makefile        # when done
 - [docs/u64-unattended-flash.md](docs/u64-unattended-flash.md): flashing an Ultimate
   64 Elite unattended.
 - [docs/vivado-install.md](docs/vivado-install.md): the unattended Vivado install.
+- [docs/agents/](docs/agents/): procedures for coding agents (U2+L deploy, JTAG gdb for a
+  wedged U64, device invariants, firmware lessons), installed with the agent guide.
 
 ## Development
 
@@ -490,6 +504,7 @@ are simulated, so no hardware is needed:
 python3 -m unittest discover -s tooling -p 'test_*.py'
 python3 -m unittest discover -s vivado -p 'test_*.py'
 python3 -m unittest discover -s tests -p 'test_install.py'
+python3 -m unittest discover -s tests -p 'test_guide.py'
 python3 -m unittest discover -s tests -p 'test_release.py'
 bash tooling/test_apply_pr.sh
 ```
