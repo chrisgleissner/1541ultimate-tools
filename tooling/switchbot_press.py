@@ -12,6 +12,9 @@ A hold of 5 followed by a short press is a full power cycle while the FPGA runs.
 
 Needs `pip install PySwitchbot` (it brings bleak and bleak-retry-connector) and
 a powered Bluetooth controller (`bluetoothctl power on`).
+
+Exit status: 0 pressed; 2 Bot not found; 3 hold time not acknowledged; 4 press not
+acknowledged; 5 a Python package is missing.
 """
 
 import argparse
@@ -20,8 +23,13 @@ import sys
 
 
 async def press(mac, hold, timeout):
-    from bleak import BleakScanner
-    from switchbot import Switchbot
+    try:
+        from bleak import BleakScanner
+        from switchbot import Switchbot
+    except ImportError as exc:
+        print(f"[switchbot] the Python package {exc.name or exc} is missing; "
+              "install it with: python3 -m pip install PySwitchbot bleak", file=sys.stderr)
+        return 5
 
     device = await BleakScanner.find_device_by_address(mac, timeout=timeout)
     if device is None:
