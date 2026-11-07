@@ -250,8 +250,11 @@ class Board:
             raise ModeError("this needs a power cycle of the board; pass --allow-power-cycle to allow it")
         outlet = self.check_outlet()
         status, data = self.http("GET", "/v1/configs/U64%20Specific%20Settings/Power%20On%20After%20Power%20Loss")
-        if status == 200:
-            cur = _find_current(data)
+        cur = _find_current(data) if status == 200 else None
+        if status == 200 and cur is None:
+            # another firmware can answer this URL with 200 without carrying the setting
+            log("the firmware that answers does not report 'Power On After Power Loss'")
+        if cur is not None:
             if cur != "On":
                 raise ModeError(f"'Power On After Power Loss' is {cur!r}, not 'On': the board would stay off after "
                                 "the cycle. Set it to On first (C64U menu, U64 Specific Settings).")
@@ -698,6 +701,8 @@ def main(argv=None, board_factory=Board) -> int:
         elif a.command == "check-power":
             status_code, data = board.http("GET", "/v1/configs/U64%20Specific%20Settings/Power%20On%20After%20Power%20Loss")
             cur = _find_current(data) if status_code == 200 else None
+            if status_code == 200 and cur is None:
+                raise ModeError("the firmware that answers does not report the setting; start the Ultimate firmware")
             if cur != "On":
                 raise ModeError("'Power On After Power Loss' is not readable as On "
                                 f"({cur or 'no Ultimate REST'}); set it to On in the Ultimate firmware first")

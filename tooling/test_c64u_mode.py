@@ -411,6 +411,23 @@ class PowerCycleTest(Base):
             b.power_cycle()
         self.assertNotIn("powerctl cycle", self.runner.commands())
 
+    def test_200_without_the_setting_uses_the_record_and_a_hard_cycle(self):
+        # another firmware answers the URL with 200 but carries no 'current' value
+        self.store.update(power_on_seen=time.time() - 86400)
+        b = self.board({POWER: (200, {"errors": []})})
+        with mock.patch.object(cm, "log") as lg:
+            b.power_cycle()
+        self.assertEqual(self.runner.commands()[-1], "powerctl cycle")
+        self.assertNotIn(("PUT", "/v1/machine:poweroff"), b.requests)
+        self.assertTrue(any("does not report" in c.args[0] for c in lg.call_args_list))
+
+    def test_200_without_the_setting_and_no_record_refuses(self):
+        b = self.board({POWER: (200, {"errors": []})})
+        with self.assertRaisesRegex(cm.ModeError, "check-power"):
+            b.power_cycle()
+        self.assertNotIn("powerctl cycle", self.runner.commands())
+        self.assertNotIn(("PUT", "/v1/machine:poweroff"), b.requests)
+
     def test_board_that_keeps_answering_is_not_cut(self):
         b = self.board({POWER: (200, {"current": "On"}), ("GET", "/v1/info"): (200, {})})
         with mock.patch.object(cm.time, "monotonic", side_effect=[0, 0, 100]):
@@ -628,6 +645,10 @@ class MainTest(Base):
 
     def test_check_power(self):
         self.assertEqual(self.main("check-power"), 1)
+        self.answers[POWER] = (200, {"errors": []})                            # another firmware: 200, no value
+        self.assertEqual(self.main("check-power"), 1)
+        self.assertIn("does not report the setting", self.boards[-1].notes[-1])
+        self.assertIsNone(self.store.get("power_on_seen"))
         self.answers[POWER] = (200, {"current": "On"})
         self.assertEqual(self.main("check-power", "--dry-run"), 0)
         self.assertIsNone(self.store.get("power_on_seen"))
