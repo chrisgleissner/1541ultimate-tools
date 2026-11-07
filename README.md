@@ -34,10 +34,11 @@ You need git, Docker and a 1541ultimate checkout. If you have no checkout yet:
 git clone https://github.com/GideonZ/1541ultimate.git "$HOME/1541ultimate"
 ```
 
-Install release 0.2.1 into it. Set `ULTIMATE` to your checkout:
+Install the latest release into it. Set `ULTIMATE` to your checkout:
 
 ```bash
-VERSION=0.2.1
+VERSION="$(curl -fsSL https://api.github.com/repos/chrisgleissner/1541ultimate-tools/releases/latest \
+    | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')"
 ULTIMATE="$HOME/1541ultimate"
 TMP="$(mktemp -d)"
 curl -fsSL "https://github.com/chrisgleissner/1541ultimate-tools/archive/refs/tags/v${VERSION}.tar.gz" | tar -xz -C "$TMP"
@@ -73,6 +74,7 @@ BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii # writes update_<commit>.ue2
 | `tooling/switchbot_press.py` | Presses an Ultimate 64's power button through a SwitchBot Bot | [docs/u64-unattended-flash.md](docs/u64-unattended-flash.md) |
 | `tooling/u64ii_gdb.sh` | gdb for the running C64 Ultimate application: tasks as threads, backtraces | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/c64u_monitor.py` | Watches a C64 Ultimate's video stream, REST API and console | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
+| `tooling/c64u_mode.py` (`c64u-mode`) | Switches a C64 Ultimate or Ultimate 64 Elite II between firmware setups with one command | [C64 Ultimate firmware setups](#c64-ultimate-firmware-setups) |
 | `tooling/apply_pr.sh` | Makes a throwaway worktree with upstream pull requests applied | `./build-tool --help` |
 | `vivado/install.sh` | Installs AMD Vivado 2024.1 for Artix-7 without interaction | [docs/vivado-install.md](docs/vivado-install.md) |
 
@@ -83,11 +85,14 @@ of this repository.
 
 ### Apply a release to an existing checkout
 
-Pick a release from the [releases page](https://github.com/chrisgleissner/1541ultimate-tools/releases),
-then run these commands. Only the first two lines change:
+These commands apply the latest release. To apply another one, pick its number from the
+[releases page](https://github.com/chrisgleissner/1541ultimate-tools/releases) and replace
+the `VERSION=` command with, for example, `VERSION=X.Y.Z`.
+The `ULTIMATE` line is the only other one that changes:
 
 ```bash
-VERSION=0.2.1                        # the release to apply
+VERSION="$(curl -fsSL https://api.github.com/repos/chrisgleissner/1541ultimate-tools/releases/latest \
+    | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')"
 ULTIMATE="$HOME/1541ultimate"        # your 1541ultimate checkout
 TMP="$(mktemp -d)"
 curl -fsSL "https://github.com/chrisgleissner/1541ultimate-tools/archive/refs/tags/v${VERSION}.tar.gz" | tar -xz -C "$TMP"
@@ -101,7 +106,7 @@ Check which release a checkout has:
 cat "$ULTIMATE/.1541ultimate-tools-version"
 ```
 
-To move to another release, run the same commands with a different `VERSION`. Add
+To move to another release, run the same commands with that release's `VERSION`. Add
 `--dry-run` before the checkout path to see what the installer would do first.
 
 ### Install the latest development version
@@ -124,7 +129,7 @@ To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
 - **Does not copy anything else:** not this README, `docs/`, the logo, the tests,
   `vivado/` or `patches/`.
 - **Records the version** in `.1541ultimate-tools-version`: the release number, or
-  for a development install the version plus the commit, such as `0.2.1+g1234567`.
+  for a development install the version plus the commit, such as `<version>+g<commit>`.
 - **Hides the tools from git:** it lists each installed path in the checkout's
   `.git/info/exclude`, anchored at the top of the checkout (`/build`, `/tooling/`).
   That file is local to the checkout and never committed, so `git status` stays clean
@@ -320,6 +325,29 @@ tooling/u64ii_jtag.sh probe                  # identify the board; changes nothi
 ./build-tool --jtag-monitor c64u             # show the application's console
 ```
 
+### C64 Ultimate firmware setups
+
+`tooling/c64u_mode.py` switches one C64 Ultimate or Ultimate 64 Elite II between firmware
+setups. `tooling/c64u_mode.sh` is a wrapper that you can link as `~/.local/bin/c64u-mode`.
+It needs the JTAG setup from [docs/c64u-jtag.md](docs/c64u-jtag.md):
+
+```bash
+c64u-mode status               # what runs on the board and what the flash holds; changes nothing
+c64u-mode list                 # the modes this installation knows
+c64u-mode snapshot stock       # save the whole flash as image "stock"
+c64u-mode flash:stock          # write the latest image "stock" to the flash over JTAG
+c64u-mode --dry-run <mode>     # show what a switch would do
+```
+
+The built-in modes are `flash:<name>` (write a stored flash image), `jtag` (run a
+bitstream and application from RAM) and `reload` (reconfigure the FPGA from flash).
+Configuration is in `~/.config/c64u-mode/config.ini`; stored images are in
+`~/.local/share/c64u-mode/`. Each command that touches the board holds the C64U
+device lock for its whole run. A smart-outlet power cycle only happens with
+`--allow-power-cycle`. Further modes are added as plugins; see
+[tooling/c64u_modes/README.md](tooling/c64u_modes/README.md). The header comment of
+`tooling/c64u_mode.py` is the full reference.
+
 ### Try an upstream pull request
 
 `build-tool` applies the pull request in a throwaway worktree, so your checkout stays
@@ -426,7 +454,7 @@ make u64ii_no_esp
 
 ### `make u64_swapply`
 
-`patches/0001-add-u64_swapply-make-target.patch` adds a `u64_swapply` make target,
+The command below uses the `VERSION` from [Install](#install). `patches/0001-add-u64_swapply-make-target.patch` adds a `u64_swapply` make target,
 which builds the Ultimate 64 application and runs it over JTAG in one step. It
 changes the tracked `Makefile`, so revert it before you push a branch upstream:
 
@@ -526,7 +554,7 @@ stable release from its date and version and supplies source ZIP/tarball downloa
 To publish an existing tag that did not trigger the workflow, run:
 
 ```bash
-gh workflow run release.yml --ref main -f tag=v0.2.1
+gh workflow run release.yml --ref main -f tag=v<version>
 ```
 
 The workflow verifies that the tag already exists; it never creates or moves
