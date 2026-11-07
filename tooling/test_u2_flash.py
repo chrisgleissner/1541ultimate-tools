@@ -20,6 +20,7 @@ import fcntl
 import ftplib
 import http.server
 import io
+import itertools
 import json
 import os
 import subprocess
@@ -270,6 +271,7 @@ class Bench:
         self.tree = {"Flash": {}, "Temp": {}, "USB1": {}}
         self.path = list(start_path)
         self.cursor = 0
+        self.top = 0                   # the first listing entry in the window
         self.overlay_open = False
         self.context = False
         self.save_popup = False
@@ -315,9 +317,10 @@ class Bench:
             return None
         names, node = self.listing()
         rows = [(0, 2, "*** C64 Ultimate ***" if self.foreign_title else "*** Ultimate II+L 3.15 (122) ***", 1)]
-        for i, name in enumerate(names):
+        window = uf.LISTING_ROWS[1] - uf.LISTING_ROWS[0]
+        for i, name in enumerate(names[self.top:self.top + window], start=self.top):
             text = f"{name:<14}{node[name]:>8}" if isinstance(node[name], int) else f"{name} <DIR>"
-            rows.append((2 + i, 0, text, 1 if i == self.cursor and not self.context else 12))
+            rows.append((uf.LISTING_ROWS[0] + i - self.top, 0, text, 1 if i == self.cursor and not self.context else 12))
         if self.context:
             rows.append((12, 10, "Run Update", 1))
         if self.save_popup:
@@ -334,7 +337,15 @@ class Bench:
             node = node[part]
         return json_reply(200, {"files": {"path": remote, "size": node}, "errors": []})
 
+    def scroll_into_view(self):
+        window = uf.LISTING_ROWS[1] - uf.LISTING_ROWS[0]
+        self.top = max(min(self.top, self.cursor), self.cursor - window + 1)
+
     def cartridge_key(self, keys):
+        self.cartridge_key_unscrolled(keys)
+        self.scroll_into_view()
+
+    def cartridge_key_unscrolled(self, keys):
         names, node = self.listing()
         shifted = "left_shift" in keys
         if self.save_popup:
@@ -349,7 +360,7 @@ class Bench:
                 self.cursor = self.listing()[0].index(left)
             elif not shifted and isinstance(node[names[self.cursor]], dict):
                 self.path.append(names[self.cursor])
-                self.cursor = 0
+                self.cursor = self.top = 0
         elif keys == ["return"]:
             if self.context:
                 self.flashing = True
@@ -825,7 +836,48 @@ class Navigation(Base):
         menu = self.menu()
         with self.assertRaisesRegex(uf.Failure, "'nothing' not found in the listing; screen:\n.*Ultimate II\\+L"):
             uf.select_row(menu, uf.first_token("nothing"), "nothing")
-        self.assertEqual(self.b.keys, [])
+        # The listing is scrolled to its end and back to its start before the row is declared missing.
+        self.assertEqual(self.b.keys, [DOWN] * 3 + [UP] * 3)
+
+    def long_listing(self, count=27):
+        self.b.tree["Flash"] = {f"dir{i:02d}": {} for i in range(count)}
+        self.b.path = ["Flash"]
+
+    def test_a_row_below_the_listing_window_is_found_by_scrolling_down(self):
+        menu = self.menu()
+        self.long_listing()
+        self.assertNotIn("dir24", uf.Screen(self.b.cartridge_screen()).text)       # below the 22-row window
+        screen = uf.select_row(menu, uf.first_token("dir24"), "dir24")
+        self.assertEqual(screen.rows[screen.selected_row()], "dir24 <DIR>")
+        self.assertEqual(self.b.cursor, 24)
+        self.assertEqual(self.b.keys, [DOWN] * 24)
+
+    def test_a_row_above_the_listing_window_is_found_by_scrolling_up(self):
+        menu = self.menu()
+        self.long_listing()
+        uf.select_row(menu, uf.first_token("dir26"), "dir26")
+        self.b.keys.clear()
+        screen = uf.select_row(menu, uf.first_token("dir00"), "dir00")
+        self.assertEqual(self.b.cursor, 0)
+        self.assertEqual(screen.rows[screen.selected_row()], "dir00 <DIR>")
+        self.assertEqual(self.b.keys[0], DOWN)                  # the end of the list is probed first
+        self.assertEqual(self.b.keys.count(UP), 26)
+
+    def test_a_row_missing_from_a_long_listing_is_reported_after_scrolling_both_ways(self):
+        menu = self.menu()
+        self.long_listing()
+        with self.assertRaisesRegex(uf.Failure, "'nothing' not found in the listing"):
+            uf.select_row(menu, uf.first_token("nothing"), "nothing")
+        self.assertEqual(self.b.keys, [DOWN] * 27 + [UP] * 27)
+
+    def test_a_listing_that_keeps_changing_is_scrolled_only_up_to_the_limit(self):
+        menu = self.menu()
+        self.long_listing()
+        endless = itertools.count()
+        with mock.patch.object(uf.Menu, "screen", lambda self: uf.Screen(screen_bytes([(2, 0, f"x{next(endless)}", 1)]))):
+            with self.assertRaisesRegex(uf.Failure, "'nothing' not found"):
+                uf.select_row(menu, uf.first_token("nothing"), "nothing")
+        self.assertEqual(len(self.b.keys), 2 * uf.SCROLL_ROW_STEPS)
 
     def test_a_screen_without_a_selected_row_stops_the_navigation(self):
         menu = self.menu()
@@ -1027,7 +1079,34 @@ class FlashFailures(Base):
         self.b.foreign_title = True
         self.assertEqual(self.flash(), 1)
         self.assertIn("menu opened but 'Ultimate II+L' not found", self.out)
-        self.assertEqual(self.b.keys, [])
+        self.assertEqual(self.b.keys, [RUN_STOP])       # the menu is closed again
+        self.assertFalse(self.b.overlay_open)
+
+    def test_a_branch_below_the_listing_window_is_reached_and_flashed(self):
+        self.bench()
+        latest = self.b.tree["USB1"].setdefault("Firmware", {}).setdefault("latest", {})
+        latest.update({f"b{i:02d}": {} for i in range(26)})         # "main" becomes the 27th entry
+        self.assertEqual(self.flash(), 0, self.out)
+        self.assertEqual(self.b.keys[:5 + 26 + 3], [DOWN, DOWN, RIGHT, RIGHT, RIGHT] + [DOWN] * 26 + [RIGHT] * 3)
+        self.assertIn("Confirmed selection on 'main <DIR>'", self.out)
+
+    def test_an_abort_after_the_menu_was_opened_closes_the_menu(self):
+        self.bench()
+        self.b.tree["USB1"]["Other"] = {}
+        with mock.patch.object(uf, "upload_artifact"), mock.patch.object(uf, "verify_upload"):
+            self.assertEqual(self.flash(), 1)
+        self.assertIn("Closing the menu after the failure", self.out)
+        self.assertFalse(self.b.overlay_open)
+        self.assertEqual(self.b.keys[-1], RUN_STOP)
+
+    def test_a_menu_that_cannot_be_closed_after_an_abort_is_reported_and_the_abort_stands(self):
+        self.bench()
+        self.b.tree["USB1"]["Other"] = {}
+        with mock.patch.object(uf, "upload_artifact"), mock.patch.object(uf, "verify_upload"), \
+                mock.patch.object(uf.Menu, "close_from_anywhere", side_effect=uf.Failure("stuck")):
+            self.assertEqual(self.flash(), 1)
+        self.assertIn("Could not close the menu: stuck", self.out)
+        self.assertIn("ABORT (safe): navigation to update.u2l failed: 'Firmware' not found", self.out)
 
     def test_a_missing_directory_stops_the_navigation(self):
         self.bench()
@@ -1060,6 +1139,7 @@ class FlashFailures(Base):
             self.assertEqual(self.flash(), 1)
         self.assertIn("could not open the 'Run Update' context action: expected a context menu with 'Run Update'",
                       self.out)
+        self.assertFalse(self.b.overlay_open)               # the menu is closed again
         self.assertEqual(self.b.keys.count(RETURN), 1)
 
     def test_a_failing_back_out_after_the_dry_validation_is_ignored(self):

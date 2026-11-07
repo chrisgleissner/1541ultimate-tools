@@ -10,7 +10,8 @@
     c64u-mode install-desktop        KDE/freedesktop launchers (and global hotkeys) for the modes
 
 Options: --dry-run (change nothing), --wait S (wait up to S seconds for the device lock instead of refusing),
---allow-power-cycle (this command may power-cycle the board), --force (see 'Flash images').
+--allow-power-cycle (this command may power-cycle the board), --force (see 'Flash images'),
+--reload-wait S (see 'After a reload').
 
 Built-in modes:
 
@@ -30,6 +31,7 @@ Configuration: ~/.config/c64u-mode/config.ini
 
     [board]
     host = c64u.local            ; REST/FTP address of the board (or set C64U_HOST)
+    reload_wait = 60             ; optional: seconds to wait for the REST after a reload; 0 = do not wait
     outlet = C64U                ; exact alias of the smart outlet that powers ONLY this board (powerctl)
     outlet_id = 8022AC...        ; optional: its powerctl device id; a different device under that alias is refused
     deny_outlets = Desk, Router  ; aliases never switched, also when 'outlet' is a prefix of one of them. The list
@@ -41,6 +43,12 @@ Configuration: ~/.config/c64u-mode/config.ini
     stock = flash:stock          ; short names for launchers and hotkeys
     [hotkeys]
     stock = Meta+Alt+1
+
+After a reload: 'reload', every 'flash:<name>' mode and 'snapshot' reconfigure or disturb the board, which a stock
+firmware may then leave without a network. These commands wait up to 60 s (--reload-wait S, or [board] reload_wait;
+0 turns the wait off, for a firmware that has no Ultimate REST) for REST /v1/info. A silent board is an error (exit 1)
+that names the way out: a power cycle. With --allow-power-cycle the command performs that power cycle itself, under
+the rules of 'Power cycles', and waits again.
 
 Device lock: every command that touches the board holds the c64u lock ($DEVICE_LOCK_DIR/c64u.lock, the flock
 u64ii_jtag.py and tooling/with_device_locks.py use; the older C64U_JTAG_LOCK names the file when DEVICE_LOCK_DIR is
@@ -98,6 +106,7 @@ INSTALL_HINTS = {
     "powerctl": "install powerctl (https://github.com/chrisgleissner/powerctl)",
 }
 POWER_SETTING_MAX_AGE = 30 * 86400
+DEFAULT_RELOAD_WAIT = 60.0         # seconds to wait for the REST after a reload
 
 
 class ModeError(Exception):
@@ -161,6 +170,7 @@ class Board:
         self.dry_run = dry_run
         self.allow_power_cycle = allow_power_cycle
         self.state = state            # the FlashStore whose state.json records the power setting
+        self.reload_wait = None       # seconds; None: [board] reload_wait, else DEFAULT_RELOAD_WAIT
         self._run = run
 
     # REST -----------------------------------------------------------------------------------------------------------
@@ -236,6 +246,35 @@ class Board:
                 return info
             time.sleep(2)
         return None
+
+    def reload_wait_seconds(self) -> float:
+        if self.reload_wait is not None:
+            return self.reload_wait
+        text = self.cfg["board"].get("reload_wait", "").strip()
+        try:
+            seconds = float(text) if text else DEFAULT_RELOAD_WAIT
+        except ValueError:
+            raise ModeError(f"[board] reload_wait is {text!r}, not a number of seconds") from None
+        return seconds
+
+    def await_rest(self):
+        """After a reload or a flash switch: wait for the board's REST, else fail naming the power cycle.
+
+        Only with --allow-power-cycle does the tool cycle the power itself (power_cycle checks the outlet)."""
+        seconds = self.reload_wait_seconds()
+        if self.dry_run or seconds <= 0:
+            return
+        log(f"waiting up to {seconds:g} s for the board's REST after the reload")
+        if self.wait_rest(seconds):
+            return
+        if not self.allow_power_cycle:
+            raise ModeError(f"board did not answer within {seconds:g} s after the reload; a power cycle recovers it "
+                            "(c64u-mode ensure <mode> --allow-power-cycle)")
+        log(f"the board did not answer within {seconds:g} s after the reload; power cycling it "
+            "(--allow-power-cycle was given)")
+        self.power_cycle()
+        if not self.wait_rest(seconds):
+            raise ModeError(f"board did not answer within {seconds:g} s after the reload and the power cycle")
 
     # power ----------------------------------------------------------------------------------------------------------
     def power_cycle(self, wait_port: int = 80):
@@ -519,6 +558,7 @@ def builtin(reg: Registry, store: FlashStore):
             changed = flash_swap(ctx.board, ctx.store, target, force=ctx.force)
             if changed:
                 ctx.board.reload()
+            ctx.board.await_rest()          # the swap read the flash over JTAG, which can leave the board silent
             ctx.board.notify(f"the flash holds {target}" + ("; reloaded from flash" if changed else ""))
 
         def reached(ctx):
@@ -541,6 +581,7 @@ def builtin(reg: Registry, store: FlashStore):
 
     def reload(ctx, args):
         ctx.board.reload()
+        ctx.board.await_rest()
         ctx.board.notify("reloaded from flash; the flashed firmware starts")
 
     reg.add("reload", "reconfigure the FPGA from flash (the flashed firmware starts)", reload)
@@ -673,6 +714,9 @@ def main(argv=None, board_factory=Board) -> int:
     p.add_argument("--allow-power-cycle", action="store_true", help="this command may power-cycle the board")
     p.add_argument("--force", action="store_true",
                    help="snapshot: file under the name anyway; flash:<name>: write although the last write failed")
+    p.add_argument("--reload-wait", type=float, default=None, metavar="S",
+                   help="after reload, flash:<name> and snapshot: wait up to S seconds for the REST "
+                        "(default: [board] reload_wait, else 60; 0 does not wait)")
     a = p.parse_args(argv)
 
     cfg = load_config()
@@ -684,6 +728,7 @@ def main(argv=None, board_factory=Board) -> int:
     reg = Registry()
     builtin(reg, store)
     load_plugins(reg, cfg)
+    board.reload_wait = a.reload_wait
     ctx = Context(board, store, cfg, reg)
     ctx.force = a.force
     try:
@@ -714,6 +759,7 @@ def main(argv=None, board_factory=Board) -> int:
                     if not a.name:
                         raise ModeError("snapshot needs a name: what the flash holds now, e.g. 'stock'")
                     snapshot(board, store, a.name, force=a.force)
+                    board.await_rest()
                 elif a.command == "ensure":
                     if not a.name:
                         raise ModeError("ensure needs a mode, e.g. 'c64u-mode ensure c64u'")

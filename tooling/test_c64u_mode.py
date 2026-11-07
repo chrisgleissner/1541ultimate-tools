@@ -95,7 +95,7 @@ class FakeBoard(cm.Board):
 def config(**board):
     cfg = configparser.ConfigParser()
     cfg.optionxform = str
-    cfg.read_dict({"board": {"host": "10.0.0.2", "outlet": "C64U", **board}, "modes": {}, "hotkeys": {}})
+    cfg.read_dict({"board": {"host": "10.0.0.2", "outlet": "C64U", "reload_wait": "0", **board}, "modes": {}, "hotkeys": {}})
     return cfg
 
 
@@ -535,6 +535,83 @@ class PowerCycleTest(Base):
         self.assertEqual(self.runner.commands()[-1], "powerctl cycle")
 
 
+class ReloadWaitTest(Base):
+    """After a reload, a flash switch or a snapshot the board's REST must answer, else the command fails."""
+    INFO = ("GET", "/v1/info")
+    UP = (200, {"firmware_version": "1.2"})
+
+    def setUp(self):
+        super().setUp()
+        self.now = 0.0
+        for name, value in (("monotonic", lambda: self.now),
+                            ("sleep", lambda seconds: setattr(self, "now", self.now + seconds))):
+            p = mock.patch.object(cm.time, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def board(self, answers=None, allow=False, **board):
+        self.runner = FakeRunner()
+        return FakeBoard(config(**board), run=self.runner, answers=answers or {}, allow_power_cycle=allow,
+                         state=self.store)
+
+    def test_the_default_wait_is_60_seconds_and_an_answering_board_passes(self):
+        b = self.board({self.INFO: self.UP}, reload_wait="")
+        self.assertEqual(b.reload_wait_seconds(), 60.0)
+        b.await_rest()
+        self.assertEqual(b.requests, [("GET", "/v1/info")])
+
+    def test_a_silent_board_is_an_error_that_names_the_power_cycle(self):
+        b = self.board(reload_wait="")
+        with self.assertRaisesRegex(cm.ModeError, r"board did not answer within 60 s after the reload; "
+                                                  r"a power cycle recovers it \(c64u-mode ensure <mode> "
+                                                  r"--allow-power-cycle\)"):
+            b.await_rest()
+        self.assertGreaterEqual(self.now, 60)
+        self.assertNotIn("powerctl cycle", self.runner.commands())
+
+    def test_the_wait_comes_from_the_configuration_and_the_command_line_wins(self):
+        b = self.board(reload_wait="7.5")
+        with self.assertRaisesRegex(cm.ModeError, "within 7.5 s"):
+            b.await_rest()
+        self.assertTrue(7.5 <= self.now < 20)
+        b.reload_wait = 3
+        with self.assertRaisesRegex(cm.ModeError, "within 3 s"):
+            b.await_rest()
+
+    def test_zero_and_a_dry_run_do_not_wait(self):
+        zero = self.board(reload_wait="0")
+        zero.await_rest()
+        dry = self.board(reload_wait="60")
+        dry.dry_run = True
+        dry.await_rest()
+        self.assertEqual(zero.requests + dry.requests, [])
+
+    def test_a_reload_wait_that_is_not_a_number_is_an_error(self):
+        with self.assertRaisesRegex(cm.ModeError, "reload_wait is 'soon'"):
+            self.board(reload_wait="soon").await_rest()
+
+    def test_with_the_allow_flag_the_board_is_power_cycled_and_awaited_again(self):
+        b = self.board({self.INFO: lambda: self.UP if "powerctl cycle" in self.runner.commands() else (None, ""),
+                        POWER: (None, "")}, allow=True, reload_wait="10")
+        self.store.update(power_on_seen=time.time() - 86400)
+        b.await_rest()
+        self.assertEqual(self.runner.commands()[-1], "powerctl cycle")
+        self.assertIn("C64U", self.runner.calls[-1])
+
+    def test_a_board_that_stays_silent_after_the_power_cycle_is_an_error(self):
+        b = self.board({POWER: (None, "")}, allow=True, reload_wait="10")
+        self.store.update(power_on_seen=time.time() - 86400)
+        with self.assertRaisesRegex(cm.ModeError, "within 10 s after the reload and the power cycle"):
+            b.await_rest()
+        self.assertEqual(self.runner.commands().count("powerctl cycle"), 1)
+
+    def test_the_power_cycle_rules_still_apply_with_the_allow_flag(self):
+        b = self.board({}, allow=True, reload_wait="10")        # no record that the setting was On
+        with self.assertRaisesRegex(cm.ModeError, "check-power"):
+            b.await_rest()
+        self.assertNotIn("powerctl cycle", self.runner.commands())
+
+
 # ---- the lock -------------------------------------------------------------------------------------------------------
 
 class LockTest(Base):
@@ -774,6 +851,29 @@ class MainTest(Base):
         self.assertEqual(self.main("s", "--allow-power-cycle"), 0)            # reads, finds stock, no write
         self.assertTrue(self.boards[-1].allow_power_cycle)
         self.assertEqual(self.main("jtag", "--", "--bin", "a"), 0)
+
+    def test_reload_flash_modes_and_snapshot_fail_on_a_board_that_stays_silent(self):
+        self.cfg["board"]["reload_wait"] = "5"
+        self.assertEqual(self.main("snapshot", "stock", "--reload-wait", "0"), 0)       # the option turns it off
+        for argv in (("snapshot", "stock"), ("reload",), ("s",), ("ensure", "s")):
+            with self.subTest(argv=argv):
+                self.store.update(current="other")              # so that 'ensure' has to switch
+                self.assertEqual(self.main(*argv), 1)
+                self.assertIn("board did not answer within 5 s after the reload", self.boards[-1].notes[-1])
+                self.assertIn("--allow-power-cycle", self.boards[-1].notes[-1])
+        self.assertEqual(self.runner.commands().count("powerctl cycle"), 0)
+
+    def test_the_same_commands_succeed_when_the_board_answers(self):
+        self.cfg["board"]["reload_wait"] = "5"
+        self.answers[("GET", "/v1/info")] = (200, {"firmware_version": "1.2"})
+        for argv in (("snapshot", "stock"), ("reload",), ("s",), ("ensure", "s")):
+            with self.subTest(argv=argv):
+                self.store.update(current="other")
+                self.assertEqual(self.main(*argv), 0)
+
+    def test_the_command_line_sets_the_reload_wait(self):
+        self.assertEqual(self.main("reload", "--reload-wait", "3"), 1)
+        self.assertIn("within 3 s", self.boards[-1].notes[-1])
 
     def test_held_lock_refuses_and_notifies(self):
         h = open(cm.LOCK, "a+")
