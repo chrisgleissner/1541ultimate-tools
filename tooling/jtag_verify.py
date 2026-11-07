@@ -27,7 +27,9 @@ PROFILES = {
 }
 SUPPORTED = {(0x09FB, 0x6001): "blaster", (0x0403, 0x6014): "ft232h"}
 LENGTHS = (1, 2, 7, 8, 9, 15, 16, 31, 32, 63, 64, 65, 503, 504, 505,
-           511, 512, 513, 4095, 4096, 4097, 65535, 65536, 65537)
+           511, 512, 513, 4095, 4096, 4097, 8000)
+# Read-back scans stay below the FT232H's receive buffer: a 65537-bit scan in
+# one write timed out on hardware, 8000 bits at 100 kHz and 3 MHz did not.
 
 
 class PolicyError(jt.JtagError):

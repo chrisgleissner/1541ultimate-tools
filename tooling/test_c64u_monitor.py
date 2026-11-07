@@ -559,7 +559,10 @@ class SavePngTest(VideoBase):
         video = mon.VideoWatch(make_args(self.tmp.name), self.log, self.stop)
         with mock.patch.dict(sys.modules, {"PIL": None}):
             video.save_png(b"\x11" * 384)
+            video.save_png(b"\x11" * 384)
         self.assertEqual(os.listdir(self.tmp.name), [])
+        warnings = [w for w in self.log.levels("WARN") if "Pillow" in w]
+        self.assertEqual(len(warnings), 1)
 
     @unittest.skipUnless(__import__("importlib").util.find_spec("PIL"), "Pillow not installed")
     def test_real_pillow_writes_a_readable_png(self):

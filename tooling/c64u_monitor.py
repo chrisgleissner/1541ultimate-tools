@@ -111,6 +111,7 @@ class VideoWatch(threading.Thread):
         self.args, self.log, self.stop = args, log, stop
         self.last_packet = 0.0
         self.last_status = 0.0
+        self.png_warned = False
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("", args.video_port))
@@ -143,6 +144,10 @@ class VideoWatch(threading.Thread):
         try:
             from PIL import Image
         except ImportError:
+            if not self.png_warned:
+                self.png_warned = True
+                self.log.write("video", "WARN", "Pillow is missing, so no latest.png is written; "
+                               "install it with: pip install pillow")
             return
         lines = len(raw) // (WIDTH // 2)
         img = Image.new("RGB", (WIDTH, lines))
