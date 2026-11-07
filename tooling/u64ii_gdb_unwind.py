@@ -10,6 +10,13 @@ past the first frame of this firmware:
 This unwinder scans the whole function instead: it finds the frame allocation
 (addi sp,sp,-N) and the saves of ra and s0 (sw ra,K(sp) / sw s0,K(sp)), and
 recovers the caller's pc, sp and s0 from them.
+
+Whether the frame exists at the pc is decided by following the control flow
+from the function's entry, not by comparing addresses: a shrink-wrapped early
+exit lies after the allocation in address order but is reached without it, and
+the `ret` after the epilogue's `addi sp,sp,N` is reached with the frame already
+released. Only if the paths reaching the pc disagree, or the pc is not reached
+from the entry at all, does the unwinder fall back to comparing addresses.
 """
 
 import re
@@ -19,7 +26,14 @@ from gdb.unwinder import Unwinder, register_unwinder
 
 ALLOC = re.compile(r"^addi\s+sp,\s*sp,\s*-(\d+)$")
 SAVE = re.compile(r"^sw\s+(ra|s0),\s*(\d+)\(sp\)$")
+DEALLOC = re.compile(r"^addi\s+sp,\s*sp,\s*(\d+)$")
+BRANCH = re.compile(r"^(?:c\.)?(?:beq|bne|blt|bge|bltu|bgeu|beqz|bnez|blez|bgez|bltz|bgtz|bgt|ble|bgtu|bleu)$")
+# the target address, with or without 0x (gdb prints 0x1030, objdump 1030), and an optional <symbol+offset>
+TARGET = re.compile(r"(?:^|,)\s*(?:0x)?([0-9a-fA-F]+)\s*(?:<[^>]*>)?\s*$")
 LIMIT = 4096           # instructions scanned per function
+
+# Frame state of a path from the function entry: allocated or not, ra and s0 saved or not.
+NONE, ALLOCATED, RELEASED = 0, 1, 2
 
 
 class _FrameId:
@@ -60,6 +74,51 @@ def _scan(arch, start, end):
     return size, alloc, saves
 
 
+def _flow(arch, start, end, pc, saves):
+    """The set of (frame, ra saved, s0 saved) states in which execution can reach `pc`.
+
+    Follows branches, jumps and calls from the function's entry. Empty when `pc` is not reached."""
+    insns = list(arch.disassemble(start, end - 1, LIMIT))
+    index = {insn["addr"]: i for i, insn in enumerate(insns)}
+    save_at = {address: reg for reg, (_offset, address) in saves.items()}
+    seen, reach, work = set(), set(), [(0, (NONE, False, False))]
+    while work:
+        i, state = work.pop()
+        if i >= len(insns) or (i, state) in seen:
+            continue
+        seen.add((i, state))
+        insn = insns[i]
+        if insn["addr"] == pc:
+            reach.add(state)
+        frame, ra, s0 = state
+        text = insn["asm"].strip()
+        mnemonic, _, operands = text.replace("\t", " ").partition(" ")
+        operands = operands.strip()
+        if ALLOC.match(text):
+            frame = ALLOCATED if frame == NONE else frame
+        elif DEALLOC.match(text) and frame == ALLOCATED:
+            frame = RELEASED
+        reg = save_at.get(insn["addr"])
+        ra, s0 = ra or reg == "ra", s0 or reg == "s0"
+        after = (frame, ra, s0)
+        target = TARGET.search(operands)
+        target = index.get(int(target.group(1), 16)) if target else None
+        first = operands.split(",")[0].strip()
+        if BRANCH.match(mnemonic):
+            work.append((i + 1, after))
+            if target is not None:
+                work.append((target, after))
+        elif mnemonic in ("j", "c.j") or (mnemonic == "jal" and first in ("zero", "x0")):
+            if target is not None:
+                work.append((target, after))
+        elif mnemonic in ("ret", "jr", "c.jr", "tail", "mret", "sret", "uret") or \
+                (mnemonic == "jalr" and first in ("zero", "x0")):
+            pass
+        else:                       # includes calls: execution continues after them
+            work.append((i + 1, after))
+    return reach
+
+
 class U64iiScanUnwinder(Unwinder):
     def __init__(self):
         super().__init__("u64ii-riscv-scan")
@@ -78,9 +137,20 @@ class U64iiScanUnwinder(Unwinder):
         def word(address):
             return int.from_bytes(bytes(inferior.read_memory(address, 4)), "little")
 
+        # by address order, the fallback; the control flow decides when it is clear
         framed = alloc is not None and alloc < pc
+        ra_saved = framed and "ra" in saves and saves["ra"][1] < pc
+        s0_saved = framed and "s0" in saves and saves["s0"][1] < pc
+        states = _flow(arch, start, end, pc, saves) if alloc is not None else set()
+        frames = {state[0] for state in states}
+        if frames == {ALLOCATED}:
+            framed = True
+            ra_saved = all(state[1] for state in states)
+            s0_saved = all(state[2] for state in states)
+        elif states and ALLOCATED not in frames:
+            framed = ra_saved = s0_saved = False
         caller_sp = sp + size if framed else sp
-        if framed and "ra" in saves and saves["ra"][1] < pc:
+        if ra_saved:
             ra = word(sp + saves["ra"][0])
         else:
             try:
@@ -93,7 +163,7 @@ class U64iiScanUnwinder(Unwinder):
             _FrameId(caller_sp, start, pending.read_register("sp").type))
         info.add_saved_register("pc", gdb.Value(ra).cast(pending.read_register("pc").type))
         info.add_saved_register("sp", gdb.Value(caller_sp).cast(pending.read_register("sp").type))
-        if framed and "s0" in saves and saves["s0"][1] < pc:
+        if s0_saved:
             s0 = word(sp + saves["s0"][0])
             info.add_saved_register("fp", gdb.Value(s0).cast(pending.read_register("fp").type))
         return info
