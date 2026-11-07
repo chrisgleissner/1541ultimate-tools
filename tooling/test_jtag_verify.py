@@ -480,5 +480,16 @@ class ReportTest(unittest.TestCase):
             self.assertEqual(v.main([]), 2)
 
 
+
+class HardwareLimitsTest(unittest.TestCase):
+    def test_read_back_scans_fit_the_ft232h_receive_buffer(self):
+        # 65537-bit read-back scans timed out on an FT232H; 8000 bits did not.
+        self.assertLessEqual(max(v.LENGTHS), 8000)
+
+    def test_gdb_wrapper_sources_the_unwinder_unquoted_and_ignores_stub_status(self):
+        text = (Path(__file__).parent / "u64ii_gdb.sh").read_text()
+        self.assertNotIn('source \\"', text)
+        self.assertIn("wait $STUB 2>/dev/null || true", text)
+
 if __name__ == "__main__":
     unittest.main()

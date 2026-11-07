@@ -44,7 +44,7 @@ PY="${U64II_JTAG_PYTHON:-${XDG_CACHE_HOME:-$HOME/.cache}/1541ultimate-tools/jtag
 [[ -x "$PY" ]] || { "$SCRIPT_DIR/u64ii_jtag.sh" --help >/dev/null; }
 "$PY" "$SCRIPT_DIR/u64ii_gdbstub.py" "${stub_args[@]}" &
 STUB=$!
-trap 'rc=$?; kill $STUB 2>/dev/null; wait $STUB 2>/dev/null; exit $rc' EXIT
+trap 'rc=$?; kill $STUB 2>/dev/null; wait $STUB 2>/dev/null || true; exit $rc' EXIT
 for _ in $(seq 1 100); do
     kill -0 $STUB 2>/dev/null || die "the gdb server did not start"
     (exec 3<>/dev/tcp/127.0.0.1/$PORT) 2>/dev/null && break
@@ -52,5 +52,5 @@ for _ in $(seq 1 100); do
 done
 
 unwind=()
-"$GDB" -q -batch -ex "python print(1)" >/dev/null 2>&1 && unwind=(-ex "source \"$SCRIPT_DIR/u64ii_gdb_unwind.py\"")
+"$GDB" -q -batch -ex "python print(1)" >/dev/null 2>&1 && unwind=(-ex "source $SCRIPT_DIR/u64ii_gdb_unwind.py")
 "$GDB" -q "$ELF" -ex "set pagination off" ${unwind[@]+"${unwind[@]}"} -ex "target extended-remote :$PORT" "$@"
