@@ -71,6 +71,9 @@ jobs:
       - name: Agent guide tests
         run: python -m unittest discover -v -s tests -p 'test_guide.py'
 
+      - name: Agent skills tests
+        run: python -m unittest discover -v -s tests -p 'test_skills.py'
+
       - name: Release workflow tests
         run: python -m unittest discover -v -s tests -p 'test_release.py'
 
@@ -106,6 +109,11 @@ jobs:
         run: |
           python -m unittest -v tests/upstream/test_contract.py
           python -m unittest -v tests/upstream/test_overlay.py
+
+      # The firmware files that the agent skills name.
+      - name: Agent skills against the firmware
+        working-directory: 1541ultimate-tools
+        run: python -m unittest -v tests/test_skills.py
 
       # The README's development install, run as written.
       - name: Install the tools as README.md describes

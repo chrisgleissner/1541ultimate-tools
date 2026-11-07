@@ -25,6 +25,14 @@
 # NAME.local-<YYYYmmdd-HHMMSS>, which git ignores too. AGENTS.local.md, the
 # place for machine-specific notes, is only added to the excludes; it is never
 # created, changed, moved or deleted.
+#
+# The agent skills in skills/ are installed as CHECKOUT/.claude/skills/NAME/ and
+# CHECKOUT/.agents/skills/NAME/, with each skill's own anchored exclude entries,
+# so other skills in those directories stay visible to git. The install stops
+# before copying anything if the checkout tracks one of the skill paths. An
+# untracked SKILL.md is handled like the guide files: replaced when it equals
+# the shipped copy or the previous install's copy, and otherwise moved to
+# SKILL.md.local-<YYYYmmdd-HHMMSS> in the same directory first.
 
 set -euo pipefail
 
@@ -38,7 +46,7 @@ CHECKOUT=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run) DRY_RUN=1 ;;
-        -h|--help) sed -n '2,27p' "$HERE/install.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,35p' "$HERE/install.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) die "unknown option $1" ;;
         *) [[ -z $CHECKOUT ]] || die "only one checkout, please"; CHECKOUT=$1 ;;
     esac
@@ -86,9 +94,21 @@ source_of() {
     esac
 }
 
+# The agent skills: skills/NAME/SKILL.md here, installed under both roots in
+# CHECKOUT, which Claude Code and other agents read respectively.
+SKILL_ROOTS=(.claude/skills .agents/skills)
+SKILLS=()
+while IFS= read -r path; do
+    SKILLS+=("$(basename "$(dirname "$path")")")
+done < <(find "$HERE/skills" -mindepth 2 -maxdepth 2 -type f -name SKILL.md | sort)
+SKILL_FILES=()
+for root in "${SKILL_ROOTS[@]}"; do
+    for name in "${SKILLS[@]}"; do SKILL_FILES+=("$root/$name/SKILL.md"); done
+done
+
 # The agent guide files, installed from checkout/ at the top of CHECKOUT, and
-# the record of what an install wrote, so the next install can tell its own
-# unchanged copy from a local edit.
+# the record of what an install wrote (the guide files and the skills), so the
+# next install can tell its own unchanged copy from a local edit.
 GUIDE=(AGENTS.md CLAUDE.md)
 GUIDE_RECORD=.1541ultimate-tools-guide
 LOCAL_GUIDE=AGENTS.local.md
@@ -98,6 +118,7 @@ LOCAL_GUIDE=AGENTS.local.md
 EXCLUDES=(/build /build.cmd /build-tool /build-tool.d/ /tooling/ /.build-tool.env
           /.build-tool.env.example /.1541ultimate-tools-version /$GUIDE_RECORD
           /$LOCAL_GUIDE)
+for file in "${SKILL_FILES[@]}"; do EXCLUDES+=("/$(dirname "$file")/"); done
 
 sha256() {
     if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
@@ -115,34 +136,55 @@ trap 'rm -rf "$RENDERED"' EXIT
 for name in "${GUIDE[@]}"; do
     sed "s|{{TOOLS_REF}}|$REF|g" "$HERE/checkout/$name" > "$RENDERED/$name"
 done
+for name in "${SKILLS[@]}"; do
+    sed "s|{{TOOLS_REF}}|$REF|g" "$HERE/skills/$name/SKILL.md" > "$RENDERED/skill-$name.md"
+done
 
-# What happens to each guide file; GUIDE_ACTION[i] for GUIDE[i] is one of
-#   tracked    the checkout tracks it: left alone, a warning
+# What happens to an installed text file REL (a guide file or a skill), given
+# its rendered copy: one of
 #   install    absent: installed
 #   same       present and equal to the shipped copy: nothing to write
 #   replace    present and equal to the copy of the previous install
 #   backup     present and different: moved aside, then installed
+file_action() {
+    local rel=$1 rendered=$2 shipped current recorded
+    if [[ ! -e $CHECKOUT/$rel && ! -L $CHECKOUT/$rel ]]; then
+        echo install
+        return
+    fi
+    shipped="$(sha256 "$rendered")"
+    current="$(sha256 "$CHECKOUT/$rel" 2>/dev/null || true)"
+    recorded="$(awk -v n="$rel" '$2 == n { print $1; exit }' "$CHECKOUT/$GUIDE_RECORD" 2>/dev/null || true)"
+    if [[ $current == "$shipped" ]]; then echo same
+    elif [[ -n $recorded && $current == "$recorded" ]]; then echo replace
+    else echo backup
+    fi
+}
+
+# What happens to each guide file; GUIDE_ACTION[i] for GUIDE[i] is one of the
+# above or
+#   tracked    the checkout tracks it: left alone, a warning
 GUIDE_ACTION=()
 for i in "${!GUIDE[@]}"; do
     name=${GUIDE[$i]}
     if git -C "$CHECKOUT" ls-files --error-unmatch -- "$name" >/dev/null 2>&1; then
         action=tracked
-    elif [[ ! -e $CHECKOUT/$name && ! -L $CHECKOUT/$name ]]; then
-        action=install
     else
-        shipped="$(sha256 "$RENDERED/$name")"
-        current="$(sha256 "$CHECKOUT/$name" 2>/dev/null || true)"
-        recorded="$(sed -n "s/^\([0-9a-f]\{64\}\)  $name\$/\1/p" "$CHECKOUT/$GUIDE_RECORD" 2>/dev/null || true)"
-        if [[ $current == "$shipped" ]]; then action=same
-        elif [[ -n $recorded && $current == "$recorded" ]]; then action=replace
-        else action=backup
-        fi
+        action="$(file_action "$name" "$RENDERED/$name")"
     fi
     GUIDE_ACTION+=("$action")
     [[ $action == tracked ]] || EXCLUDES+=("/$name" "/$name.local-*")
 done
 
-tracked="$(git -C "$CHECKOUT" ls-files -- "${FILES[@]}" .1541ultimate-tools-version)"
+# The same for each skill file; SKILL_ACTION[i] is for SKILL_FILES[i].
+SKILL_ACTION=()
+for file in "${SKILL_FILES[@]}"; do
+    SKILL_ACTION+=("$(file_action "$file" "$RENDERED/skill-$(basename "$(dirname "$file")").md")")
+done
+
+SKILL_DIRS=()
+for file in "${SKILL_FILES[@]}"; do SKILL_DIRS+=("$(dirname "$file")"); done
+tracked="$(git -C "$CHECKOUT" ls-files -- "${FILES[@]}" .1541ultimate-tools-version "${SKILL_DIRS[@]}")"
 [[ -z $tracked ]] || die "the checkout tracks these tool paths, so they are not overwritten:
 $tracked"
 
@@ -212,6 +254,32 @@ for i in "${!GUIDE[@]}"; do
     [[ ${GUIDE_ACTION[$i]} == same ]] || run cp -f "$RENDERED/$name" "$CHECKOUT/$name"
 done
 
+installed_skills=()
+for i in "${!SKILL_FILES[@]}"; do
+    file=${SKILL_FILES[$i]}
+    case ${SKILL_ACTION[$i]} in
+        install) log "$file: absent, installing it" ;;
+        same) log "$file: already the shipped copy" ;;
+        replace) log "$file: unchanged copy of an earlier install, replacing it" ;;
+        backup)
+            stamp="$(date +%Y%m%d-%H%M%S)"
+            aside="$CHECKOUT/$file.local-$stamp"
+            n=1
+            while [[ -e $aside || -L $aside ]]; do aside="$CHECKOUT/$file.local-$stamp-$n"; n=$((n + 1)); done
+            if [[ $DRY_RUN -eq 1 ]]; then
+                log "$file: differs from the shipped copy; would move it to $aside and install the shipped copy"
+            else
+                mv -- "$CHECKOUT/$file" "$aside"
+                log "$file: differs from the shipped copy; kept as $aside, installed the shipped copy as $CHECKOUT/$file"
+            fi ;;
+    esac
+    installed_skills+=("$file")
+    if [[ ${SKILL_ACTION[$i]} != same ]]; then
+        run mkdir -p "$CHECKOUT/$(dirname "$file")"
+        run cp -f "$RENDERED/skill-$(basename "$(dirname "$file")").md" "$CHECKOUT/$file"
+    fi
+done
+
 if [[ -e $CHECKOUT/$LOCAL_GUIDE || -L $CHECKOUT/$LOCAL_GUIDE ]]; then
     log "$LOCAL_GUIDE exists; left as it is"
 else
@@ -227,11 +295,16 @@ printf '%s\n' "$VERSION" > "$CHECKOUT/.1541ultimate-tools-version"
 for name in ${installed_guide[@]+"${installed_guide[@]}"}; do
     printf '%s  %s\n' "$(sha256 "$RENDERED/$name")" "$name" >> "$CHECKOUT/$GUIDE_RECORD"
 done
+for file in "${installed_skills[@]}"; do
+    printf '%s  %s\n' "$(sha256 "$RENDERED/skill-$(basename "$(dirname "$file")").md")" "$file" \
+        >> "$CHECKOUT/$GUIDE_RECORD"
+done
 
-log "installed ${#FILES[@]} files; added ${#missing[@]} entries to $exclude"
+log "installed ${#FILES[@]} files and ${#SKILLS[@]} skills; added ${#missing[@]} entries to $exclude"
 visible="$(git -C "$CHECKOUT" status --porcelain --untracked-files=all -- \
            "${FILES[@]}" .1541ultimate-tools-version "$GUIDE_RECORD" "$LOCAL_GUIDE" \
-           ${installed_guide[@]+"${installed_guide[@]}"} 'AGENTS.md.local-*' 'CLAUDE.md.local-*')"
+           ${installed_guide[@]+"${installed_guide[@]}"} 'AGENTS.md.local-*' 'CLAUDE.md.local-*' \
+           "${SKILL_DIRS[@]}")"
 [[ -z $visible ]] || die "git still sees these paths:
 $visible"
 log "done; next: cd $(printf '%q' "$CHECKOUT") && ./build-tool --check-support"

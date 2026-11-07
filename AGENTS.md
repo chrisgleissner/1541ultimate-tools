@@ -6,6 +6,10 @@ is a separate file, `checkout/AGENTS.md` (with `checkout/CLAUDE.md` and the proc
 agent needs only sometimes into `docs/agents/`. Both must stay free of addresses, host names, home paths, private
 repositories and personal tooling: `tests/test_guide.py` checks this, the word budget and the file references.
 
+The agent skills in `skills/NAME/SKILL.md` follow the same rules. Each body stays at or under 500 words, names tools and
+procedures only through `tooling/...`, `tooling/docs/agents/...` or the pinned `{{TOOLS_REF}}` document URL (an installed
+skill cannot read `docs/`), and carries no date, incident story or local tool name. `tests/test_skills.py` checks this.
+
 ## Install
 
 `install.sh` never overwrites a guide file that holds local work; see its header and `tests/test_install.py` before
@@ -14,6 +18,7 @@ changing the rules. It never creates, changes, moves or deletes `AGENTS.local.md
 ```sh
 python3 -m unittest discover -s tests -p 'test_install.py'
 python3 -m unittest discover -s tests -p 'test_guide.py'
+python3 -m unittest discover -s tests -p 'test_skills.py'
 ```
 
 ## c64u-mode

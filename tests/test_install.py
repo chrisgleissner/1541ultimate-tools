@@ -287,6 +287,154 @@ class InstallTest(unittest.TestCase):
         prose = [l for l in body.splitlines()[1:] if l.strip() and not l.startswith("## ")]
         self.assertEqual(len(prose), 1, prose)       # the one introductory paragraph
 
+    # The agent skills: .claude/skills/NAME/ and .agents/skills/NAME/.
+
+    SKILLS = sorted(name for name in os.listdir(os.path.join(TOOLS, "skills"))
+                    if os.path.isfile(os.path.join(TOOLS, "skills", name, "SKILL.md")))
+    SKILL_ROOTS = (".claude/skills", ".agents/skills")
+
+    def skill_path(self, root, name):
+        return self.path(root, name, "SKILL.md")
+
+    def skill_backups(self, root, name):
+        return sorted(n for n in os.listdir(self.path(root, name)) if n.startswith("SKILL.md.local-"))
+
+    def test_skills_are_installed_rendered_and_excluded_one_by_one(self):
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertGreaterEqual(len(self.SKILLS), 6)
+        excludes = self.excludes()
+        for root in self.SKILL_ROOTS:
+            self.assertNotIn("/" + root.split("/")[0] + "/", excludes)      # not all of /.claude/
+            for name in self.SKILLS:
+                with self.subTest(root=root, skill=name):
+                    text = self.read(root, name, "SKILL.md")
+                    self.assertTrue(text.startswith(f"---\nname: {name}\n"))
+                    self.assertNotIn("{{TOOLS_REF}}", text)
+                    self.assertEqual(os.listdir(self.path(root, name)), ["SKILL.md"])
+                    self.assertEqual(excludes.count(f"/{root}/{name}/"), 1)
+        self.assertRegex(self.read(".claude/skills", "c64u-jtag-run", "SKILL.md"),
+                         r"1541ultimate-tools/blob/(v[0-9.]+|[0-9a-f]+)/docs/c64u-jtag\.md")
+        self.assertEqual(self.read(".claude/skills", "u2pl-recover", "SKILL.md"),
+                         self.read(".agents/skills", "u2pl-recover", "SKILL.md"))
+        self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=self.checkout), "")
+        record = self.read(".1541ultimate-tools-guide")
+        text = self.read(".claude/skills", "pr-minimal-diff", "SKILL.md")
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        self.assertIn(f"{digest}  .claude/skills/pr-minimal-diff/SKILL.md", record)
+
+    def test_other_skills_in_the_same_directories_stay_visible_to_git(self):
+        for root in self.SKILL_ROOTS:
+            os.makedirs(self.path(root, "mine"))
+            with open(self.path(root, "mine", "SKILL.md"), "w") as handle:
+                handle.write("my skill\n")
+        self.assertEqual(self.install().returncode, 0)
+        self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=self.checkout),
+                         "?? .agents/skills/mine/SKILL.md\n?? .claude/skills/mine/SKILL.md\n")
+        self.assertEqual(self.read(".claude/skills", "mine", "SKILL.md"), "my skill\n")
+
+    def test_second_run_skills_are_idempotent(self):
+        self.assertEqual(self.install().returncode, 0)
+        before = {(root, name): self.read(root, name, "SKILL.md")
+                  for root in self.SKILL_ROOTS for name in self.SKILLS}
+        excludes = self.excludes()
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("added 0 entries", result.stdout)
+        self.assertIn("already the shipped copy", result.stdout)
+        self.assertEqual(self.excludes(), excludes)
+        for (root, name), text in before.items():
+            with self.subTest(root=root, skill=name):
+                self.assertEqual(self.read(root, name, "SKILL.md"), text)
+                self.assertEqual(self.skill_backups(root, name), [])
+
+    def test_unchanged_skill_of_an_earlier_install_is_replaced_silently(self):
+        self.assertEqual(self.install().returncode, 0)
+        old = "---\nname: u2pl-recover\n---\nolder shipped skill\n"
+        target = self.skill_path(".claude/skills", "u2pl-recover")
+        with open(target, "w") as handle:
+            handle.write(old)
+        record = self.path(".1541ultimate-tools-guide")
+        kept = [line for line in self.read(".1541ultimate-tools-guide").splitlines()
+                if not line.endswith("  .claude/skills/u2pl-recover/SKILL.md")]
+        with open(record, "w") as handle:
+            handle.write("".join(line + "\n" for line in kept))
+            handle.write(f"{hashlib.sha256(old.encode()).hexdigest()}  .claude/skills/u2pl-recover/SKILL.md\n")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("older shipped skill", self.read(".claude/skills", "u2pl-recover", "SKILL.md"))
+        self.assertEqual(self.skill_backups(".claude/skills", "u2pl-recover"), [])
+
+    def test_edited_skill_is_moved_aside_never_lost(self):
+        self.assertEqual(self.install().returncode, 0)
+        target = self.skill_path(".agents/skills", "vhdl-analysis")
+        shipped = self.read(".agents/skills", "vhdl-analysis", "SKILL.md")
+        with open(target, "w") as handle:
+            handle.write(shipped + "my local rule\n")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        backups = self.skill_backups(".agents/skills", "vhdl-analysis")
+        self.assertEqual(len(backups), 1)
+        self.assertRegex(backups[0], r"^SKILL\.md\.local-\d{8}-\d{6}$")
+        self.assertEqual(self.read(".agents/skills", "vhdl-analysis", backups[0]), shipped + "my local rule\n")
+        self.assertEqual(self.read(".agents/skills", "vhdl-analysis", "SKILL.md"), shipped)
+        self.assertIn(backups[0], result.stdout)
+        self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=self.checkout), "")
+
+    def test_a_tracked_skill_path_stops_the_install_before_anything_is_copied(self):
+        os.makedirs(self.path(".claude", "skills", "pr-minimal-diff"))
+        with open(self.skill_path(".claude/skills", "pr-minimal-diff"), "w") as handle:
+            handle.write("tracked upstream\n")
+        git("add", ".claude", cwd=self.checkout)
+        git("commit", "-qm", "track a skill", cwd=self.checkout)
+        result = self.install()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(".claude/skills/pr-minimal-diff/SKILL.md", result.stderr)
+        self.assertFalse(os.path.exists(self.path("build-tool")))
+        self.assertFalse(os.path.exists(self.path(".agents")))
+        self.assertEqual(self.read(".claude/skills", "pr-minimal-diff", "SKILL.md"), "tracked upstream\n")
+        self.assertNotIn("/.claude/skills/pr-minimal-diff/", self.excludes())
+
+    def test_tracked_files_elsewhere_in_the_skill_directories_do_not_block_the_install(self):
+        os.makedirs(self.path(".claude", "skills", "upstream-skill"))
+        with open(self.path(".claude", "skills", "upstream-skill", "SKILL.md"), "w") as handle:
+            handle.write("tracked upstream\n")
+        with open(self.path(".claude", "settings.json"), "w") as handle:
+            handle.write("{}\n")
+        git("add", ".claude", cwd=self.checkout)
+        git("commit", "-qm", "track other claude files", cwd=self.checkout)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=self.checkout), "")
+        self.assertEqual(self.read(".claude", "skills", "upstream-skill", "SKILL.md"), "tracked upstream\n")
+
+    def test_dry_run_reports_each_skill_case_and_writes_nothing(self):
+        result = self.install("--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(".claude/skills/pr-minimal-diff/SKILL.md: absent, installing it", result.stdout)
+        self.assertIn(".agents/skills/pr-minimal-diff/SKILL.md: absent, installing it", result.stdout)
+        self.assertIn("/.claude/skills/pr-minimal-diff/", result.stdout)          # the entries it would add
+        self.assertFalse(os.path.exists(self.path(".claude")))
+        self.assertFalse(os.path.exists(self.path(".agents")))
+        os.makedirs(self.path(".claude", "skills", "pr-minimal-diff"))
+        with open(self.skill_path(".claude/skills", "pr-minimal-diff"), "w") as handle:
+            handle.write("mine\n")
+        result = self.install("--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(".claude/skills/pr-minimal-diff/SKILL.md: differs from the shipped copy; would move it to",
+                      result.stdout)
+        self.assertEqual(self.read(".claude/skills", "pr-minimal-diff", "SKILL.md"), "mine\n")
+        self.assertEqual(self.skill_backups(".claude/skills", "pr-minimal-diff"), [])
+        self.assertFalse(os.path.exists(self.path(".1541ultimate-tools-guide")))
+
+    def test_worktree_gets_the_skills_through_the_shared_exclude_file(self):
+        worktree = os.path.join(self.tmp, "wt")
+        git("worktree", "add", "-q", "--detach", worktree, cwd=self.checkout)
+        result = self.install(checkout=worktree)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(worktree, ".claude", "skills", "c64u-jtag-run", "SKILL.md")))
+        self.assertEqual(git("status", "--porcelain", "--untracked-files=all", cwd=worktree), "")
+
     def test_dry_run_changes_nothing(self):
         result = self.install("--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)

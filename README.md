@@ -24,6 +24,7 @@ of it, and they stay out of git there.
 - [Device settings](#device-settings)
 - [Troubleshooting](#troubleshooting)
 - [Documentation](#documentation)
+- [Agent skills](#agent-skills)
 - [Development](#development)
 
 ## Quick start
@@ -129,6 +130,8 @@ To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
 - **Installs the agent guide:** `AGENTS.md` and `CLAUDE.md` (which imports `AGENTS.md`)
   at the top of the checkout, and the procedures the guide links in
   `tooling/docs/agents/`. They are hidden from git like the tools.
+- **Installs the agent skills** from `skills/` into `.claude/skills/<name>/` and
+  `.agents/skills/<name>/` (see [Agent skills](#agent-skills)).
 - **Does not copy anything else:** not this README, the other `docs/`, the logo, the
   tests, `vivado/` or `patches/`.
 - **Records the version** in `.1541ultimate-tools-version`: the release number, or
@@ -140,8 +143,8 @@ To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
 - **Leaves everything else alone:**
   - It overwrites files from an earlier install, and leaves your own files in
     `tooling/` alone.
-  - It stops before copying anything if the checkout tracks one of the tool paths, so
-    it never overwrites a tracked file.
+  - It stops before copying anything if the checkout tracks one of the tool paths or
+    skill directories, so it never overwrites a tracked file.
   - A second run adds no duplicate entries.
   - It works in git worktrees.
 
@@ -153,6 +156,11 @@ also ignores. Machine-specific notes belong in `AGENTS.local.md`: the guide tell
 to read it, and the installer only excludes it from git and never creates or changes it
 (template: `docs/agents/AGENTS.local.example.md`). `--dry-run` reports what would happen
 to each of these files.
+
+Each skill gets its own anchored entry (`/.claude/skills/<name>/`,
+`/.agents/skills/<name>/`), so your other skills in those directories stay visible to git.
+A `SKILL.md` that you edited is moved to `SKILL.md.local-<time>` next to it before the
+shipped one is installed, by the same checksum rule as the guide files.
 
 It refuses a directory that is not the top of a git checkout with the 1541ultimate
 layout (`software/` and `target/`). A newer release overwrites the files it ships; a
@@ -493,6 +501,21 @@ git -C "$ULTIMATE" checkout Makefile        # when done
 - [docs/agents/](docs/agents/): procedures for coding agents (U2+L deploy, JTAG gdb for a
   wedged U64, device invariants, firmware lessons), installed with the agent guide.
 
+## Agent skills
+
+`skills/` holds short [Agent Skills](https://agentskills.io) for the tasks that go wrong
+most often. Each states the rules and the order of steps, and links the document that owns
+the procedure. `install.sh` installs them with the agent guide.
+
+| Skill | Use it for |
+|---|---|
+| `c64u-jtag-run` | Running a build or an upstream PR on a C64 Ultimate or Elite II over JTAG, from RAM |
+| `u2pl-recover` | Recovering an Ultimate II+L that does not boot, and bisecting the build that broke it |
+| `u64-flash-unattended` | Flashing an Ultimate 64 Elite without a person at the keyboard |
+| `pr-minimal-diff` | Cutting a firmware pull request down to the change it needs |
+| `vhdl-analysis` | Reading the FPGA sources to find out what the hardware does for the firmware |
+| `device-failure-triage` | Checking that a device is really broken, and finding intermittent failures |
+
 ## Development
 
 ### Tests
@@ -505,6 +528,7 @@ python3 -m unittest discover -s tooling -p 'test_*.py'
 python3 -m unittest discover -s vivado -p 'test_*.py'
 python3 -m unittest discover -s tests -p 'test_install.py'
 python3 -m unittest discover -s tests -p 'test_guide.py'
+python3 -m unittest discover -s tests -p 'test_skills.py'
 python3 -m unittest discover -s tests -p 'test_release.py'
 bash tooling/test_apply_pr.sh
 ```
@@ -544,10 +568,11 @@ every night:
 - **`host-tests`:**
   - Runs every host test under coverage, fails below 98%, and publishes the result
     to Codecov.
-  - Also runs the `apply_pr.sh`, installer and mocked release-workflow tests,
-    and a `bash -n` check of every shell script.
+  - Also runs the `apply_pr.sh`, installer, agent guide, agent skills and mocked
+    release-workflow tests, and a `bash -n` check of every shell script.
 - **`upstream`:** clones GideonZ/1541ultimate, installs the tools as this README
-  says, builds `u64ii` with `build-tool`, and runs `tests/upstream/`.
+  says, builds `u64ii` with `build-tool`, and runs `tests/upstream/`. It also checks that
+  the firmware files named in `skills/` exist.
 
 ### Making a release
 
