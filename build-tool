@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # build-tool — build, deploy, and monitor 1541 Ultimate firmware via Docker
 #
-# Helpers are loaded from build-tool.d/ alongside this script.
-# If that directory is missing, run:  build-tool --install-helpers
+# Helpers are loaded from build-tool.d/ alongside this script. If that
+# directory is missing, reinstall the tools with install.sh.
+#
+# Exit status: 0 success; 1 build failure; 2 deploy failure (including a
+# failed FTP upload); 3 usage or setup error (bad option, Docker or a tool
+# missing, a failed post-deploy check); 4 monitor failure.
 
-set -euo pipefail
+# -E: the ERR trap (on_error) also fires inside functions.
+set -Eeuo pipefail
 
 SCRIPT_NAME=$(basename "$0")
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd -P)
@@ -29,7 +34,10 @@ readonly PREPARED_IMAGE_REVISION="3"
 readonly DEFAULT_DEPLOY_USER="anonymous"
 readonly DEFAULT_DEPLOY_PASS=""
 readonly DEFAULT_DEPLOY_PATH="/Temp/"
-readonly DEFAULT_DEPLOY_PATH_U64="/USB2/Firmware/custom/"
+# The u64 default is the directory the 1541ultimate-tools README documents.
+# Neither default has been checked against the FTP root of a real device:
+# confirm with `curl ftp://<device>/ --list-only` before relying on it.
+readonly DEFAULT_DEPLOY_PATH_U64="/Usb1/firmware/u64/custom/"
 readonly DEFAULT_DEPLOY_PATH_U64II="/USB1/Firmware/custom/"
 readonly DEFAULT_FTP_POST_JTAG_WAIT_SECS=3
 readonly DEFAULT_JTAG_URL="${U64II_JTAG_URL:-ftdi://ftdi:232h/1}"
@@ -50,14 +58,12 @@ BUILT_TARGETS=()
 BUILT_ARTIFACTS=()
 FAILED_TARGETS=()
 FAILED_DEPLOYS=()
-FAILED_FTP_UPLOADS=()
 FAILED_JTAGS=()
 FAILED_JTAG_MONITORS=()
 FAILED_UART_MONITORS=()
 
 BUILD_FAILED=0
 DEPLOY_FAILED=0
-FTP_UPLOAD_FAILED=0
 MONITOR_FAILED=0
 VERIFY_FAILED=0
 
@@ -71,8 +77,6 @@ CUSTOM_IMAGE=0
 CHECK_SUPPORT=0
 U2_FLASH=0
 U2_FLASH_ARGS=()
-U64_CORE=0
-U64_CORE_ARGS=()
 JTAG_APP_ONLY_TARGETS=()
 APPLY_PRS=()
 PR_BASE="HEAD"
@@ -81,12 +85,15 @@ JOBS=""
 VERSION_STRING=""
 DOCKER_IMAGE="$DEFAULT_PREPARED_IMAGE"
 BASE_IMAGE="$DEFAULT_BASE_IMAGE"
-BUILD_TOOLS_DIR=""
+# Host directory with FPGA/Nios toolchains, mounted read-only into the build
+# container. Nothing is mounted unless it is named here or with --build-tools-dir.
+BUILD_TOOLS_DIR="${BUILD_TOOL_TOOLS_DIR:-}"
 DEPLOY_HOST=""
 DEPLOY_USER="$DEFAULT_DEPLOY_USER"
 DEPLOY_PASS="$DEFAULT_DEPLOY_PASS"
 DEPLOY_PATH="$DEFAULT_DEPLOY_PATH"
 DEPLOY_PATH_EXPLICIT=0
+DEPLOY_FILE=""
 JTAG_URL="$DEFAULT_JTAG_URL"
 JTAG_MONITOR_SECS=5
 UART_PORT=""
@@ -101,66 +108,27 @@ COLOR_RED="" COLOR_GREEN="" COLOR_YELLOW=""
 COLOR_BLUE="" COLOR_CYAN="" COLOR_BOLD="" COLOR_RESET=""
 
 # ---------------------------------------------------------------------------
-# Bootstrap: source helpers (or install them if missing)
+# Bootstrap: source helpers
 # ---------------------------------------------------------------------------
 
-_install_helpers() {
-    printf 'build-tool: helper directory not found at %s\n' "$HELPER_DIR" >&2
-    printf 'Run:  %s --install-helpers\n' "$SCRIPT_NAME" >&2
-    exit 1
-}
-
-# Helpers every checkout has, then optional ones that are sourced when present
-# (u64_core.sh drives an HDL tree outside this repository).
 REQUIRED_HELPERS=(logging.sh common.sh runtime.sh repo.sh targets.sh docker.sh
                   image.sh probe.sh build.sh deploy.sh
                   jtag.sh uart.sh verify.sh u2_flash.sh)
-OPTIONAL_HELPERS=(u64_core.sh)
-
-_source_helpers() {
-    local f
-    for f in "${REQUIRED_HELPERS[@]}"; do
-        # shellcheck source=/dev/null
-        source "${HELPER_DIR}/${f}"
-    done
-    for f in "${OPTIONAL_HELPERS[@]}"; do
-        # shellcheck source=/dev/null
-        [ -f "${HELPER_DIR}/${f}" ] && source "${HELPER_DIR}/${f}"
-    done
-    return 0
-}
-
-# If asked to install helpers, write them from the embedded copies below.
-if [ "${1:-}" = "--install-helpers" ]; then
-    exec bash "$0" --_do_install_helpers
-fi
-
-if [ "${1:-}" = "--_do_install_helpers" ]; then
-    # shellcheck disable=SC2016
-    install_helpers_impl() {
-        printf 'Installing helpers to %s\n' "$HELPER_DIR"
-        mkdir -p "$HELPER_DIR"
-        # Write each helper from the canonical copy that lives next to this script.
-        # (No-op when build-tool.d/ already exists — just a safety net.)
-        local f
-        for f in "${REQUIRED_HELPERS[@]}" "${OPTIONAL_HELPERS[@]}"; do
-            local src="${SCRIPT_DIR}/build-tool.d/${f}"
-            if [ ! -f "$src" ]; then
-                printf '  SKIP %s (not found)\n' "$f"
-            else
-                printf '  OK   %s\n' "$f"
-            fi
-        done
-        printf 'Done.\n'
-    }
-    install_helpers_impl
-    exit 0
-fi
 
 if [ ! -d "$HELPER_DIR" ]; then
-    _install_helpers
+    printf 'build-tool: helper directory not found at %s\n' "$HELPER_DIR" >&2
+    printf 'Reinstall the tools with install.sh from the 1541ultimate-tools repository.\n' >&2
+    exit 1
 fi
-_source_helpers
+for _helper in "${REQUIRED_HELPERS[@]}"; do
+    if [ ! -f "${HELPER_DIR}/${_helper}" ]; then
+        printf 'build-tool: missing helper %s in %s\n' "$_helper" "$HELPER_DIR" >&2
+        printf 'Reinstall the tools with install.sh from the 1541ultimate-tools repository.\n' >&2
+        exit 1
+    fi
+    # shellcheck source=/dev/null
+    source "${HELPER_DIR}/${_helper}"
+done
 setup_colors
 trap on_error ERR
 
@@ -178,12 +146,13 @@ ${COLOR_BOLD}DESCRIPTION${COLOR_RESET}
   The default action (no targets) builds u64, u64ii, and u2.
 
 ${COLOR_BOLD}TARGETS${COLOR_RESET}
-  u2        Ultimate II (RISC-V)              -> update.u2r
-  u2plus    Ultimate II+                      -> update.u2p
-  u2pl      Ultimate II+L                     -> update.u2l
-  u64       Ultimate 64                       -> update.u64
-  u64ii     Ultimate 64 Elite II / C64 Ultimate -> update.ue2  (alias: c64u)
-  all       All of the above (default)
+  u2        Ultimate II (RISC-V)              -> update_<commit>.u2r
+  u2plus    Ultimate II+                      -> update_<commit>.u2p
+  u2pl      Ultimate II+L                     -> update_<commit>.u2l
+  u64       Ultimate 64                       -> update_<commit>.u64
+  u64ii     Ultimate 64 Elite II / C64 Ultimate -> update_<commit>.ue2  (alias: c64u)
+  all       u64, u64ii and u2: the set built when no target is given
+            (not u2plus or u2pl)
 
 ${COLOR_BOLD}BUILD OPTIONS${COLOR_RESET}
   -h, --help                 Show this help and exit
@@ -194,7 +163,9 @@ ${COLOR_BOLD}BUILD OPTIONS${COLOR_RESET}
   -i, --image IMAGE          Docker image to use (default: ${DEFAULT_PREPARED_IMAGE})
       --base-image IMAGE     Base image for preparing ${DEFAULT_PREPARED_IMAGE}
                              (default: ${DEFAULT_BASE_IMAGE})
-      --build-tools-dir DIR  Mount host FPGA/Nios toolchains from DIR
+      --build-tools-dir DIR  Mount host FPGA/Nios toolchains from DIR, read-only
+                             (default: \$BUILD_TOOL_TOOLS_DIR; with neither, only
+                             the image's toolchains are used, as in CI)
       --no-submodule-update  Skip git submodule init/update
       --parallel             Build all selected targets concurrently
       --dry-run              Print commands without executing them
@@ -216,7 +187,12 @@ ${COLOR_BOLD}DEPLOY OPTIONS${COLOR_RESET}
       --deploy-pass PASS     FTP password (default: empty)
       --deploy-path PATH     Remote directory override
                              (default: target-specific, else ${DEFAULT_DEPLOY_PATH})
-      --deploy-only          Skip build; deploy pre-existing artifacts only
+      --deploy-only          Skip build; deploy pre-existing artifacts only. Needs
+                             no Docker. Uploads update_<commit>.<ext> for the
+                             commit at HEAD, under that name, and refuses when
+                             only an artifact of another commit exists.
+      --deploy-file FILE     With --deploy-only and one --deploy target: upload
+                             FILE under its own name, whichever commit built it
 
 ${COLOR_BOLD}JTAG OPTIONS${COLOR_RESET}
       --jtag TARGET          Build the application only and run it from RAM over
@@ -229,20 +205,25 @@ ${COLOR_BOLD}JTAG OPTIONS${COLOR_RESET}
                              'auto' (default, external/u64e2_*.bit by IDCODE),
                              a path, or 'warm' to keep the running FPGA image
                              and restart only the CPU (about 7 s faster)
-      --jtag-monitor TARGET  Read JTAG terminal output (u64ii: the CPU's UART)
+      --jtag-monitor TARGET  Read the CPU's UART over JTAG (u64ii/c64u only; the
+                             Ultimate 64 image has no JTAG UART, use --uart-monitor)
       --jtag-monitor-secs N  Capture JTAG output for N seconds (default: 5)
       --jtag-url URL         FT232H URL for u64ii, or 'blaster' for a USB-Blaster
                              (default: ${DEFAULT_JTAG_URL})
 
 ${COLOR_BOLD}UART OPTIONS${COLOR_RESET}
-      --uart-monitor TARGET  Read UART serial output for a target
-      --uart-port DEVICE     Serial device (e.g. /dev/ttyUSB0)
+      --uart-monitor TARGET  Read UART serial output for a target (u64 only)
+      --uart-port DEVICE     Serial device (e.g. /dev/ttyUSB0). Without it, the
+                             only known USB-TTL adapter is used; an FTDI JTAG
+                             adapter is never picked automatically.
       --uart-baud N          Baud rate (default: 115200)
       --uart-monitor-secs N  Capture duration in seconds (default: 5, 0 = until Ctrl-C)
 
 ${COLOR_BOLD}VERIFICATION OPTIONS${COLOR_RESET}
-      --verify-host HOST     Override hostname for post-deploy REST checks
-                             (default: derived from target, e.g. u64 -> u64)
+      --verify-host HOST     Device for the post-deploy REST check. Without it,
+                             U64_VERIFY_HOST (u64) or U64II_VERIFY_HOST (u64ii)
+                             is read from the environment or .build-tool.env;
+                             with none set, the check is skipped.
 
 ${COLOR_BOLD}U2+L REST FLASH${COLOR_RESET}
       --u2-flash [ARGS...]   Install U2+L firmware by uploading update.u2l and
@@ -253,14 +234,13 @@ ${COLOR_BOLD}U2+L REST FLASH${COLOR_RESET}
                              command line; run with --u2-flash --help for the
                              full option list (implemented in tools/api/u2_flash.py).
 
-$(declare -F u64_core_usage >/dev/null && u64_core_usage)
-
 ${COLOR_BOLD}NOTES${COLOR_RESET}
   u64ii embeds the Artix-7 bitstreams checked in under external/; building
   them needs Vivado and HDL sources that are not in this repository.
   U64_VERIFY_HOST and U64II_VERIFY_HOST are read from the environment, or from
   .build-tool.env beside this script. DEPLOY_HOST and DEPLOY_PATH are read by
   ./build only; build-tool takes --deploy-host and --deploy-path.
+  Building fewer than u64, u64ii and u2 needs BUILD_TOOL_ALLOW_PARTIAL=1.
   Full u2 builds require Xilinx ISE.
   u2plus and u64 builds require Quartus/Nios tools even in --sw-only mode.
   Full u2pl builds require Lattice Diamond.
@@ -279,8 +259,8 @@ ${COLOR_BOLD}EXAMPLES${COLOR_RESET}
   ${SCRIPT_NAME} --repo-dir ../c64u-firmware c64u
   ${SCRIPT_NAME} --apply-pr 705 --pr-base upstream/master --jtag c64u
   ${SCRIPT_NAME} --jtag-monitor c64u --jtag-monitor-secs 10
-  ${SCRIPT_NAME} --jtag-monitor u64 --jtag-monitor-secs 3
   ${SCRIPT_NAME} --uart-monitor u64 --uart-port /dev/ttyUSB0
+  ${SCRIPT_NAME} --deploy-only --deploy-file update_1234abcd.u64 -d u64 --deploy-host <device-ip>
   ${SCRIPT_NAME} --check-support --build-tools-dir ~/intelFPGA_lite/18.1
   ${SCRIPT_NAME} --list-targets
   ${SCRIPT_NAME} --u2-flash --dry-run
@@ -304,9 +284,6 @@ while [ "$#" -gt 0 ]; do
             ;;
         --list-targets)
             list_targets_table; exit 0
-            ;;
-        --install-helpers)
-            # handled above; unreachable here
             ;;
         -c|--clean)
             CLEAN_BUILD=1
@@ -367,6 +344,10 @@ while [ "$#" -gt 0 ]; do
         --deploy-path)
             _require_arg "$@"; DEPLOY_PATH=$2; DEPLOY_PATH_EXPLICIT=1; shift
             ;;
+        --deploy-file)
+            # Resolved now: the script changes into the repository later.
+            _require_arg "$@"; DEPLOY_FILE=$(realpath -m -- "$2"); shift
+            ;;
         --deploy-only)
             DEPLOY_ONLY=1
             ;;
@@ -378,6 +359,8 @@ while [ "$#" -gt 0 ]; do
         --jtag-monitor)
             _require_arg "$@"
             validate_target_name "$2" || die_usage "Unknown JTAG monitor target: $2"
+            [ "$(normalize_target_name "$2")" = u64ii ] \
+                || die_usage "--jtag-monitor supports only u64ii (c64u): the Ultimate 64 image has no JTAG UART. Use --uart-monitor u64."
             JTAG_MONITOR_TARGETS+=("$2"); shift
             ;;
         --jtag-monitor-secs)
@@ -411,16 +394,6 @@ while [ "$#" -gt 0 ]; do
             shift
             while [ "$#" -gt 0 ]; do
                 U2_FLASH_ARGS+=("$1"); shift
-            done
-            break
-            ;;
-        --u64-core)
-            declare -F run_u64_core >/dev/null \
-                || die_usage "--u64-core needs build-tool.d/u64_core.sh, which this checkout lacks"
-            U64_CORE=1
-            shift
-            while [ "$#" -gt 0 ]; do
-                U64_CORE_ARGS+=("$1"); shift
             done
             break
             ;;
@@ -469,8 +442,8 @@ if [ "${#APPLY_PRS[@]}" -gt 0 ]; then
         _pr_status=0
         "$TOOLING_DIR/apply_pr.sh" "${_pr_args[@]}" \
             "${APPLY_PRS[@]}" "$_pr_tree" || _pr_status=$?
-        [ "$_pr_status" -eq 3 ] && die_usage "Resolve the conflicts in ${_pr_tree}, then rerun this command."
-        [ "$_pr_status" -eq 0 ] || die_usage "Applying ${APPLY_PRS[*]} failed."
+        [ "$_pr_status" -eq 3 ] && die "Resolve the conflicts in ${_pr_tree}, then rerun this command."
+        [ "$_pr_status" -eq 0 ] || die "Applying ${APPLY_PRS[*]} failed."
     fi
     REPO_DIR="$_pr_tree"
     [ "$DRY_RUN" -eq 1 ] && [ ! -d "$REPO_DIR" ] || cd "$REPO_DIR"
@@ -485,16 +458,6 @@ if [ "$U2_FLASH" -eq 1 ]; then
     exit $?
 fi
 
-# ---------------------------------------------------------------------------
-# U64 Elite I core build short-circuit (host Quartus, no Docker/firmware build)
-# ---------------------------------------------------------------------------
-
-if [ "$U64_CORE" -eq 1 ]; then
-    run_u64_core "${U64_CORE_ARGS[@]}"
-    exit $?
-fi
-
-detect_default_build_tools_dir
 ensure_build_tools_dir
 ensure_lattice_license_file
 
@@ -542,7 +505,14 @@ fi
 # Docker + version setup
 # ---------------------------------------------------------------------------
 
-ensure_docker_ready
+# A deploy-only run uploads or loads files that already exist and needs no
+# container. Everything else, including --check-support, runs in the image.
+NEED_DOCKER=1
+[ "$DEPLOY_ONLY" -eq 1 ] && [ "$CHECK_SUPPORT" -eq 0 ] && NEED_DOCKER=0
+
+if [ "$NEED_DOCKER" -eq 1 ]; then
+    ensure_docker_ready
+fi
 detect_jobs
 resolve_version
 normalize_deploy_path
@@ -584,8 +554,11 @@ if [ "$DEPLOY_ONLY" -eq 1 ] \
     die_usage "--deploy-only requires at least one --deploy, --jtag, --jtag-monitor, or --uart-monitor target."
 fi
 
+validate_deploy_file
 verify_build_prereqs
-prepare_image
+if [ "$NEED_DOCKER" -eq 1 ]; then
+    prepare_image
+fi
 
 # ---------------------------------------------------------------------------
 # --check-support
@@ -609,7 +582,8 @@ if [ "$DEPLOY_ONLY" -eq 0 ]; then
     run_clean
     preseed_make_dirs
 
-    if [ "$PARALLEL_BUILD" -eq 1 ] && [ "${#TARGETS[@]}" -gt 1 ]; then
+    # A dry run builds nothing, so there is nothing to run concurrently.
+    if [ "$PARALLEL_BUILD" -eq 1 ] && [ "${#TARGETS[@]}" -gt 1 ] && [ "$DRY_RUN" -eq 0 ]; then
         build_targets_parallel || true
     else
         _bt=""
@@ -618,9 +592,19 @@ if [ "$DEPLOY_ONLY" -eq 0 ]; then
         done
     fi
 
-    for _bt in "${BUILT_TARGETS[@]}"; do
-        verify_build_artifact "$_bt" || true
+    # A target whose artifact fails the check counts as not built, so no
+    # deploy step below picks it up.
+    _checked=()
+    for _bt in "${BUILT_TARGETS[@]+"${BUILT_TARGETS[@]}"}"; do
+        if verify_build_artifact "$_bt"; then
+            _checked+=("$_bt")
+        else
+            BUILD_FAILED=1
+            FAILED_TARGETS+=("$_bt")
+            log_error "Artifact check failed for ${_bt}; it will not be deployed."
+        fi
     done
+    BUILT_TARGETS=("${_checked[@]+"${_checked[@]}"}")
 fi
 
 print_summary
@@ -652,6 +636,7 @@ if [ "${#JTAG_TARGETS[@]}" -gt 0 ]; then
 fi
 
 if [ "${#DEPLOY_TARGETS[@]}" -gt 0 ]; then
+    [ "$DRY_RUN" -eq 1 ] || require_command curl
     if [ "${#JTAG_TARGETS[@]}" -gt 0 ]; then
         CURRENT_ACTION="Waiting ${FTP_POST_JTAG_WAIT_SECS}s after JTAG deployment"
         run_command sleep "$FTP_POST_JTAG_WAIT_SECS"
@@ -680,7 +665,6 @@ fi
     [ "${#FAILED_DEPLOYS[@]}" -gt 0 ] && log_warn "Deploy failures:      ${FAILED_DEPLOYS[*]}"
     [ "${#FAILED_JTAGS[@]}"   -gt 0 ] && log_warn "JTAG failures:        ${FAILED_JTAGS[*]}"
 }
-[ "$FTP_UPLOAD_FAILED" -ne 0 ] && log_warn "FTP upload warnings:  ${FAILED_FTP_UPLOADS[*]}"
 [ "$MONITOR_FAILED" -ne 0 ] && log_warn "JTAG monitor failures: ${FAILED_JTAG_MONITORS[*]}"
 
 [ "$DEPLOY_FAILED"  -ne 0 ] && exit 2
@@ -688,4 +672,8 @@ fi
 [ "$BUILD_FAILED"   -ne 0 ] && exit 1
 [ "$VERIFY_FAILED"  -ne 0 ] && { log_warn "Post-deploy verification failed."; exit 3; }
 
+if [ "$DRY_RUN" -eq 1 ]; then
+    log_success "Dry run finished. Nothing was built, deployed or written."
+    exit 0
+fi
 log_success "Completed successfully."

@@ -10,11 +10,11 @@ ensure_repo_root() {
     local root
     if [ -n "$REPO_DIR" ]; then
         git -C "$REPO_DIR" rev-parse --show-toplevel >/dev/null 2>&1 \
-            || die_usage "--repo-dir '$REPO_DIR' is not a git repository."
+            || die "--repo-dir '$REPO_DIR' is not a git repository."
         root=$(cd "$REPO_DIR" && git rev-parse --show-toplevel)
     else
         root=$(git rev-parse --show-toplevel 2>/dev/null) \
-            || die_usage "Not inside a git repository. Use --repo-dir to specify the 1541ultimate repo root."
+            || die "Not inside a git repository. Use --repo-dir to specify the 1541ultimate repo root."
     fi
     REPO_DIR=$(cd "$root" && pwd -P)
     cd "$REPO_DIR"
@@ -23,7 +23,7 @@ ensure_repo_root() {
 ensure_git_ready() {
     require_command git
     git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-        || die_usage "Not a git repository: $REPO_DIR"
+        || die "Not a git repository: $REPO_DIR"
 }
 
 detect_jobs() {
@@ -72,6 +72,11 @@ make ${clean_target}" \
 }
 
 preseed_make_dirs() {
+    # Writes output/ and result/ directories and gitinfo.h into the checkout.
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log_info "Would pre-seed output/ and result/ directories and gitinfo.h in the checkout."
+        return 0
+    fi
     CURRENT_ACTION="Pre-seeding build directories"
 
     local git_tag git_branch git_date git_hash git_build git_host makefile dir
@@ -167,7 +172,6 @@ rm -rf "\$overlay"
 cp -R global_makefiles "\$overlay"
 git show HEAD:global_makefiles/shell.inc > "\$overlay/shell.inc"
 git show HEAD:global_makefiles/xilinx_ise.inc > "\$overlay/xilinx_ise.inc"
-sed -i 's/--field-separator=/-F/g' "\$overlay/xilinx_ise.inc"
 make -j ${JOBS} SHELL=/bin/bash GLOBAL_INCS="\$overlay" ${make_target}
 SCRIPT
     else
@@ -285,7 +289,11 @@ build_target() {
         [ -n "$freshness_file" ] && rm -f "$freshness_file"
         t_elapsed=$(elapsed_seconds "$t_start")
         BUILT_TARGETS+=("$target")
-        log_success "Built ${target} JTAG application ($(format_duration "$t_elapsed"))"
+        if [ "$DRY_RUN" -eq 1 ]; then
+            log_info "Would build the ${target} JTAG application (${app_image})"
+        else
+            log_success "Built ${target} JTAG application ($(format_duration "$t_elapsed"))"
+        fi
         CURRENT_ACTION=""
         return 0
     fi
@@ -306,7 +314,11 @@ build_target() {
     t_elapsed=$(elapsed_seconds "$t_start")
     BUILT_TARGETS+=("$target")
     BUILT_ARTIFACTS+=("$versioned_name")
-    log_success "Built ${target} -> ${versioned_name} ($(format_duration "$t_elapsed"))"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log_info "Would build ${target} -> ${versioned_name}"
+    else
+        log_success "Built ${target} -> ${versioned_name} ($(format_duration "$t_elapsed"))"
+    fi
     CURRENT_ACTION=""
     return 0
 }
@@ -353,8 +365,12 @@ build_targets_parallel() {
             if jtag_app_only "$tgt"; then
                 BUILT_TARGETS+=("$tgt")
             else
-                art=$(find_existing_artifact "$tgt" 2>/dev/null || true)
-                [ -n "$art" ] && { BUILT_TARGETS+=("$tgt"); BUILT_ARTIFACTS+=("$art"); }
+                art=$(target_artifact_path "$tgt")
+                if [ -f "$art" ]; then
+                    BUILT_TARGETS+=("$tgt"); BUILT_ARTIFACTS+=("$art")
+                else
+                    BUILD_FAILED=1; FAILED_TARGETS+=("$tgt")
+                fi
             fi
         else
             BUILD_FAILED=1
@@ -368,13 +384,15 @@ build_targets_parallel() {
 }
 
 verify_build_prereqs() {
-    [ "$DEPLOY_ONLY" -eq 1 ] || [ "$CHECK_SUPPORT" -eq 1 ] && return 0
+    if [ "$DEPLOY_ONLY" -eq 1 ] || [ "$CHECK_SUPPORT" -eq 1 ]; then
+        return 0
+    fi
     local target
     for target in "${TARGETS[@]}"; do
         if target_needs_build_tools "$target" \
            && [ -z "$BUILD_TOOLS_DIR" ] \
            && [ "$CUSTOM_IMAGE" -eq 0 ]; then
-            die_usage "Target ${target} requires external build tools. Use --build-tools-dir or a custom --image that already contains them."
+            die "Target ${target} requires external build tools. Pass --build-tools-dir DIR (or set BUILD_TOOL_TOOLS_DIR), or use a custom --image that already contains them."
         fi
     done
 }
@@ -395,7 +413,11 @@ print_summary() {
     local artifact size cksum
     [ "${#BUILT_ARTIFACTS[@]}" -eq 0 ] && return 0
 
-    log_section "Built artifacts"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log_section "Artifacts a real run would build"
+    else
+        log_section "Built artifacts"
+    fi
     for artifact in "${BUILT_ARTIFACTS[@]}"; do
         if [ "$DRY_RUN" -eq 1 ]; then
             printf '  %s\n' "$artifact"

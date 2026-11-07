@@ -51,7 +51,7 @@ enforce_required_targets() {
         contains_value "$required" "${TARGETS[@]}" || missing+=("$required")
     done
     if [ "${#missing[@]}" -gt 0 ]; then
-        die_usage "Missing required target(s): ${missing[*]}. All three targets (u64, u64ii, u2) must be included."
+        die "Missing required target(s): ${missing[*]}. All three targets (u64, u64ii, u2) must be built together unless BUILD_TOOL_ALLOW_PARTIAL=1 is set, for example: BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool ${TARGETS[*]}"
     fi
 }
 
@@ -166,10 +166,6 @@ target_artifact_path() {
     printf 'update_%s.%s' "$VERSION_STRING" "${plain#update.}"
 }
 
-target_remote_name() {
-    target_artifact_path "$1"
-}
-
 # find_existing_artifact TARGET — print path or return 1
 find_existing_artifact() {
     local target=$1
@@ -197,5 +193,5 @@ list_targets_table() {
     printf '%-8s %-15s %s\n' u2pl   update.u2l  "RISC-V + Lattice Diamond + ESP32-C3"
     printf '%-8s %-15s %s\n' u64    update.u64  "Nios2 + Quartus + ESP32"
     printf '%-8s %-15s %s\n' u64ii  update.ue2  "RISC-V + ESP32-S3 (alias c64u; FPGA from external/)"
-    printf '%-8s %-15s %s\n' all    "(all above)" "builds u64 u64ii u2 (default)"
+    printf '%-8s %-15s %s\n' all    "(u64 u64ii u2)" "the default set; not u2plus or u2pl"
 }

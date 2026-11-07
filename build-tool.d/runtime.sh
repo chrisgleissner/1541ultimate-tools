@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # runtime.sh — command execution and tool availability helpers
 #
-# Depends on: common.sh (quote_command), logging.sh (log_info, die_usage), $DRY_RUN
+# Depends on: common.sh (quote_command), logging.sh (log_info, die), $DRY_RUN
 
 # run_command CMD [ARGS...] — log and execute; skip execution in dry-run mode
 run_command() {
@@ -12,5 +12,5 @@ run_command() {
 
 # require_command NAME — abort if NAME is not on PATH
 require_command() {
-    command -v "$1" >/dev/null 2>&1 || die_usage "Required command not found: $1"
+    command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }

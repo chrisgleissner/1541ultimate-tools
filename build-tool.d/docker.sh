@@ -28,7 +28,6 @@ detect_xilinx_license_file() {
     [ -n "$root" ] || return 0
 
     for candidate in \
-        "$root/dev/c64/1541ultimate-workspace/tooling/VivaldoISALicense/Xilinx.lic" \
         "$root/.Xilinx/Xilinx.lic" \
         "$root/.Xilinx/license.lic" \
         "$root/Xilinx/Xilinx.lic" \
@@ -43,11 +42,6 @@ detect_xilinx_license_file() {
 
     if [ -z "$found" ] && [ -d "$root/.Xilinx" ]; then
         found=$(find "$root/.Xilinx" -maxdepth 3 -type f \
-                    \( -name '*.lic' -o -name 'Xilinx.lic' \) | head -n 1 || true)
-    fi
-
-    if [ -z "$found" ] && [ -d "$root/dev/c64/1541ultimate-workspace/tooling" ]; then
-        found=$(find "$root/dev/c64/1541ultimate-workspace/tooling" -maxdepth 4 -type f \
                     \( -name '*.lic' -o -name 'Xilinx.lic' \) | head -n 1 || true)
     fi
 
@@ -188,7 +182,7 @@ EOF2
     fi
     if [ "${REQUIRE_XILINX:-0}" = "1" ] && [ -z "${XILINXD_LICENSE_FILE:-}" ] && \
             [ -z "${LM_LICENSE_FILE:-}" ]; then
-        container_fail "Xilinx ISE license was not detected. Set XILINXD_LICENSE_FILE or place Xilinx.lic in tooling/VivaldoISALicense."
+        container_fail "Xilinx ISE license was not detected. Place Xilinx.lic in .Xilinx/ or Xilinx/ inside the build tools directory (or bake XILINXD_LICENSE_FILE into the image)."
     fi
     if [ "${REQUIRE_LATTICE:-0}" = "1" ] && [ -z "$lattice_base" ]; then
         container_fail "Lattice Diamond tools were not detected under ${root}."
@@ -284,7 +278,8 @@ ensure_docker_ready() {
     require_command docker
     CURRENT_ACTION="Checking Docker daemon"
     if [ "$DRY_RUN" -eq 0 ]; then
-        docker info >/dev/null 2>&1
+        docker info >/dev/null 2>&1 \
+            || die "Docker is installed but its daemon is not reachable ('docker info' failed). Start Docker, or check that your user may use it, then rerun."
         if docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep -qi rootless; then
             DOCKER_IS_ROOTLESS=1
         fi
