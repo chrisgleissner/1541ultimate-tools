@@ -68,6 +68,9 @@ jobs:
       - name: install.sh tests
         run: python -m unittest discover -v -s tests -p 'test_install.py'
 
+      - name: Agent guide tests
+        run: python -m unittest discover -v -s tests -p 'test_guide.py'
+
       - name: Release workflow tests
         run: python -m unittest discover -v -s tests -p 'test_release.py'
 

@@ -1,5 +1,21 @@
 # Agent notes for 1541ultimate-tools
 
+This file is for working on this repository. The guide for contributing to the 1541ultimate firmware with these tools
+is a separate file, `checkout/AGENTS.md` (with `checkout/CLAUDE.md` and the procedures in `docs/agents/`), which
+`install.sh` copies into a checkout. It is read on every agent turn, so keep it near 2,000 words, and put anything an
+agent needs only sometimes into `docs/agents/`. Both must stay free of addresses, host names, home paths, private
+repositories and personal tooling: `tests/test_guide.py` checks this, the word budget and the file references.
+
+## Install
+
+`install.sh` never overwrites a guide file that holds local work; see its header and `tests/test_install.py` before
+changing the rules. It never creates, changes, moves or deletes `AGENTS.local.md` in the checkout.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_install.py'
+python3 -m unittest discover -s tests -p 'test_guide.py'
+```
+
 ## c64u-mode
 
 `tooling/c64u_mode.py` (installed as `c64u-mode`) switches one C64 Ultimate or Ultimate 64 Elite II between

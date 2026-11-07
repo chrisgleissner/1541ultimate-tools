@@ -8,13 +8,23 @@
 # and the tools in tooling/ (not their tests) into CHECKOUT, makes the scripts
 # executable, records the installed version in CHECKOUT/.1541ultimate-tools-version
 # and lists every installed path in the checkout's .git/info/exclude, so git
-# never offers them for a commit. Nothing else from this repository is copied:
-# not the documentation, the logo, the tests, vivado/ or patches/.
+# never offers them for a commit. It also installs the agent guide as
+# CHECKOUT/AGENTS.md and CHECKOUT/CLAUDE.md, and the guide's procedures in
+# CHECKOUT/tooling/docs/agents/. Nothing else from this repository is copied:
+# not the other documentation, the logo, the tests, vivado/ or patches/.
 #
 # Running it again, for example with a newer release, overwrites the installed
 # files and adds no duplicate exclude entries. Other files in tooling/ are left
 # alone. A tracked file of the checkout is never overwritten: the install stops
 # before copying anything if one of the tool paths is tracked there.
+#
+# The guide files get more care, because people keep their own. A tracked
+# AGENTS.md or CLAUDE.md is left alone with a warning. An untracked one that
+# equals a shipped copy, or the copy of the previous install, is replaced. Any
+# other untracked one (local edits, a hand-written guide) is first moved to
+# NAME.local-<YYYYmmdd-HHMMSS>, which git ignores too. AGENTS.local.md, the
+# place for machine-specific notes, is only added to the excludes; it is never
+# created, changed, moved or deleted.
 
 set -euo pipefail
 
@@ -28,7 +38,7 @@ CHECKOUT=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run) DRY_RUN=1 ;;
-        -h|--help) sed -n '2,18p' "$HERE/install.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,27p' "$HERE/install.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) die "unknown option $1" ;;
         *) [[ -z $CHECKOUT ]] || die "only one checkout, please"; CHECKOUT=$1 ;;
     esac
@@ -61,10 +71,76 @@ while IFS= read -r path; do
 done < <(find "$HERE/tooling" -maxdepth 1 -type f \( -name '*.sh' -o -name '*.py' \) \
              ! -name 'test_*' | sort)
 
+# The guide's procedures: docs/agents/ here, tooling/docs/agents/ in CHECKOUT
+# (inside the excluded tooling/ directory).
+AGENT_DOCS=tooling/docs/agents
+while IFS= read -r path; do
+    FILES+=("$AGENT_DOCS/$(basename "$path")")
+done < <(find "$HERE/docs/agents" -maxdepth 1 -type f -name '*.md' | sort)
+
+# Where an installed path comes from, relative to this repository.
+source_of() {
+    case $1 in
+        "$AGENT_DOCS"/*) printf 'docs/agents/%s\n' "${1#"$AGENT_DOCS"/}" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+# The agent guide files, installed from checkout/ at the top of CHECKOUT, and
+# the record of what an install wrote, so the next install can tell its own
+# unchanged copy from a local edit.
+GUIDE=(AGENTS.md CLAUDE.md)
+GUIDE_RECORD=.1541ultimate-tools-guide
+LOCAL_GUIDE=AGENTS.local.md
+
 # The paths git must ignore in CHECKOUT, anchored at its top so that a
 # directory called build or tooling deeper in the tree stays visible.
 EXCLUDES=(/build /build.cmd /build-tool /build-tool.d/ /tooling/ /.build-tool.env
-          /.build-tool.env.example /.1541ultimate-tools-version)
+          /.build-tool.env.example /.1541ultimate-tools-version /$GUIDE_RECORD
+          /$LOCAL_GUIDE)
+
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+    else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+# The guide links the long tool documents of this repository. The link names
+# this release's tag, or the commit of a clone, so it shows what was installed.
+case $VERSION in
+    *+g*) REF="${VERSION##*+g}" ;;
+    *) REF="v$VERSION" ;;
+esac
+RENDERED="$(mktemp -d)"
+trap 'rm -rf "$RENDERED"' EXIT
+for name in "${GUIDE[@]}"; do
+    sed "s|{{TOOLS_REF}}|$REF|g" "$HERE/checkout/$name" > "$RENDERED/$name"
+done
+
+# What happens to each guide file; GUIDE_ACTION[i] for GUIDE[i] is one of
+#   tracked    the checkout tracks it: left alone, a warning
+#   install    absent: installed
+#   same       present and equal to the shipped copy: nothing to write
+#   replace    present and equal to the copy of the previous install
+#   backup     present and different: moved aside, then installed
+GUIDE_ACTION=()
+for i in "${!GUIDE[@]}"; do
+    name=${GUIDE[$i]}
+    if git -C "$CHECKOUT" ls-files --error-unmatch -- "$name" >/dev/null 2>&1; then
+        action=tracked
+    elif [[ ! -e $CHECKOUT/$name && ! -L $CHECKOUT/$name ]]; then
+        action=install
+    else
+        shipped="$(sha256 "$RENDERED/$name")"
+        current="$(sha256 "$CHECKOUT/$name" 2>/dev/null || true)"
+        recorded="$(sed -n "s/^\([0-9a-f]\{64\}\)  $name\$/\1/p" "$CHECKOUT/$GUIDE_RECORD" 2>/dev/null || true)"
+        if [[ $current == "$shipped" ]]; then action=same
+        elif [[ -n $recorded && $current == "$recorded" ]]; then action=replace
+        else action=backup
+        fi
+    fi
+    GUIDE_ACTION+=("$action")
+    [[ $action == tracked ]] || EXCLUDES+=("/$name" "/$name.local-*")
+done
 
 tracked="$(git -C "$CHECKOUT" ls-files -- "${FILES[@]}" .1541ultimate-tools-version)"
 [[ -z $tracked ]] || die "the checkout tracks these tool paths, so they are not overwritten:
@@ -103,21 +179,59 @@ fi
 
 for file in "${FILES[@]}"; do
     run mkdir -p "$CHECKOUT/$(dirname "$file")"
-    run cp -f "$HERE/$file" "$CHECKOUT/$file"
+    run cp -f "$HERE/$(source_of "$file")" "$CHECKOUT/$file"
     case $file in
         *.sh|*.py|build|build-tool) run chmod +x "$CHECKOUT/$file" ;;
     esac
 done
+
+installed_guide=()
+for i in "${!GUIDE[@]}"; do
+    name=${GUIDE[$i]}
+    case ${GUIDE_ACTION[$i]} in
+        tracked)
+            printf '[install] WARNING: the checkout tracks %s, so the guide was not installed (shipped copy: %s)\n' \
+                "$name" "$HERE/checkout/$name" >&2
+            continue ;;
+        install) log "$name: absent, installing it" ;;
+        same) log "$name: already the shipped copy" ;;
+        replace) log "$name: unchanged copy of an earlier install, replacing it" ;;
+        backup)
+            stamp="$(date +%Y%m%d-%H%M%S)"
+            aside="$CHECKOUT/$name.local-$stamp"
+            n=1
+            while [[ -e $aside || -L $aside ]]; do aside="$CHECKOUT/$name.local-$stamp-$n"; n=$((n + 1)); done
+            if [[ $DRY_RUN -eq 1 ]]; then
+                log "$name: differs from the shipped copy; would move it to $aside and install the shipped copy"
+            else
+                mv -- "$CHECKOUT/$name" "$aside"
+                log "$name: differs from the shipped copy; kept as $aside, installed the shipped copy as $CHECKOUT/$name"
+            fi ;;
+    esac
+    installed_guide+=("$name")
+    [[ ${GUIDE_ACTION[$i]} == same ]] || run cp -f "$RENDERED/$name" "$CHECKOUT/$name"
+done
+
+if [[ -e $CHECKOUT/$LOCAL_GUIDE || -L $CHECKOUT/$LOCAL_GUIDE ]]; then
+    log "$LOCAL_GUIDE exists; left as it is"
+else
+    log "$LOCAL_GUIDE does not exist; the installer never creates it (template: $AGENT_DOCS/AGENTS.local.example.md)"
+fi
 
 if [[ $DRY_RUN -eq 1 ]]; then
     log "would write $CHECKOUT/.1541ultimate-tools-version: $VERSION"
     exit 0
 fi
 printf '%s\n' "$VERSION" > "$CHECKOUT/.1541ultimate-tools-version"
+: > "$CHECKOUT/$GUIDE_RECORD"
+for name in ${installed_guide[@]+"${installed_guide[@]}"}; do
+    printf '%s  %s\n' "$(sha256 "$RENDERED/$name")" "$name" >> "$CHECKOUT/$GUIDE_RECORD"
+done
 
 log "installed ${#FILES[@]} files; added ${#missing[@]} entries to $exclude"
 visible="$(git -C "$CHECKOUT" status --porcelain --untracked-files=all -- \
-           "${FILES[@]}" .1541ultimate-tools-version)"
+           "${FILES[@]}" .1541ultimate-tools-version "$GUIDE_RECORD" "$LOCAL_GUIDE" \
+           ${installed_guide[@]+"${installed_guide[@]}"} 'AGENTS.md.local-*' 'CLAUDE.md.local-*')"
 [[ -z $visible ]] || die "git still sees these paths:
 $visible"
 log "done; next: cd $(printf '%q' "$CHECKOUT") && ./build-tool --check-support"

@@ -6,3 +6,4 @@ coverage-html/
 coverage.xml
 jtag-output/
 .u2pl-jtag-venv/
+tests/forbidden-terms.local
