@@ -443,6 +443,78 @@ class InstallTest(unittest.TestCase):
         self.assertFalse(os.path.exists(self.path(".1541ultimate-tools-version")))
         self.assertNotIn("/tooling/", self.excludes())
 
+    # tooling/read_u64_jtag_terminal.sh as releases 0.1.0 to 0.2.4 shipped it.
+    RETIRED = "tooling/read_u64_jtag_terminal.sh"
+    RETIRED_COPY = os.path.join(TOOLS, "tests", "fixtures", "read_u64_jtag_terminal.sh")
+
+    def place_retired(self, content=None):
+        os.makedirs(self.path("tooling"), exist_ok=True)
+        if content is None:
+            shutil.copy(self.RETIRED_COPY, self.path(self.RETIRED))
+        else:
+            with open(self.path(self.RETIRED), "w") as handle:
+                handle.write(content)
+
+    def test_retired_list_names_no_file_that_is_still_shipped(self):
+        with open(INSTALL) as handle:
+            text = handle.read()
+        listed = re.findall(r'^    "(\S+) [0-9a-f]{64}', text, re.M)
+        self.assertIn(self.RETIRED, listed)
+        for name in listed:
+            self.assertFalse(os.path.exists(os.path.join(TOOLS, name)), name)
+
+    def test_untracked_retired_tool_of_a_known_version_is_removed_and_reported(self):
+        self.place_retired()
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"removed retired tool {self.RETIRED}", result.stdout)
+        self.assertFalse(os.path.exists(self.path(self.RETIRED)))
+        self.assertTrue(os.path.exists(self.path("tooling", "read_u64ii_jtag_terminal.sh")))
+        again = self.install()
+        self.assertNotIn("retired", again.stdout)
+
+    def test_dry_run_reports_the_retired_tool_and_keeps_it(self):
+        self.place_retired()
+        result = self.install("--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"would remove retired tool {self.RETIRED}", result.stdout)
+        self.assertTrue(os.path.exists(self.path(self.RETIRED)))
+
+    def test_retired_tool_with_other_content_is_left_alone(self):
+        self.place_retired("echo mine\n")
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"retired tool {self.RETIRED} differs from every version", result.stdout)
+        with open(self.path(self.RETIRED)) as handle:
+            self.assertEqual(handle.read(), "echo mine\n")
+
+    def test_tracked_retired_tool_is_left_alone(self):
+        self.place_retired()
+        git("add", "-f", self.RETIRED, cwd=self.checkout)
+        git("commit", "-qm", "track it", cwd=self.checkout)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"retired tool {self.RETIRED} is tracked", result.stdout)
+        self.assertTrue(os.path.exists(self.path(self.RETIRED)))
+
+    def test_retired_tool_that_is_a_symlink_or_directory_is_left_alone(self):
+        os.makedirs(self.path("tooling"))
+        os.symlink(self.RETIRED_COPY, self.path(self.RETIRED))
+        result = self.install()
+        self.assertIn(f"retired tool {self.RETIRED} is not a regular file", result.stdout)
+        self.assertTrue(os.path.islink(self.path(self.RETIRED)))
+        os.remove(self.path(self.RETIRED))
+        os.makedirs(self.path(self.RETIRED))
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("is not a regular file", result.stdout)
+        self.assertTrue(os.path.isdir(self.path(self.RETIRED)))
+
+    def test_retired_tool_is_not_reported_when_absent(self):
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("retired", result.stdout)
+
     def test_refuses_what_is_not_a_1541ultimate_checkout(self):
         plain = os.path.join(self.tmp, "plain")
         os.makedirs(plain)

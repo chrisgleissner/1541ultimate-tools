@@ -109,7 +109,11 @@ they exclude instruction scans, IDCODE scans and state-transition clocks.
 
 An incorrect instruction capture, unknown identity, transfer failure or data
 mismatch stops the affected adapter's remaining raw-scan tests. The verifier
-does not retry a failing scan to obtain a pass. It also blocks cleanup clocks
+does not retry a failing scan to obtain a pass. The one exception is the first
+identity read: when it returns only ones, which a cable left in an unfinished shift
+produces, the verifier does one TAP reset and reads once more. The report then shows
+`identify_retries: 1` and says so in the `JTAG-SCAN` detail; a second all-ones read
+fails the identity check. It also blocks cleanup clocks
 through an uncertain transport and closes with pin levels retained.
 
 Other selected adapters are still processed. On a healthy completion, the TAP is

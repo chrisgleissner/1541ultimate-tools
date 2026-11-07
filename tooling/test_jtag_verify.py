@@ -142,6 +142,65 @@ class SafetyTest(unittest.TestCase):
                 tap.identify()  # bad chain tail
         self.assertEqual(model.instructions, [])
 
+    def first_reads_all_ones(self, tap, reads):
+        """Make the first `reads` DR scans of the TAP return 96 bits of ones."""
+        inner = tap._SafeTap__tap
+        real = inner.dr
+        remaining = [reads]
+
+        def dr(tdi, nbits, read):
+            if remaining[0]:
+                remaining[0] -= 1
+                real(tdi, nbits, read)
+                return (1 << nbits) - 1
+            return real(tdi, nbits, read)
+        return patch.object(inner, "dr", side_effect=dr)
+
+    def test_all_ones_idcode_is_retried_once_after_a_tap_reset(self):
+        tap, model, _, _ = transport()
+        with self.first_reads_all_ones(tap, 1) as dr, \
+                patch.object(tap, "reset", wraps=tap.reset) as reset:
+            self.assertEqual(tap.identify(), model.code)
+        self.assertEqual((dr.call_count, reset.call_count), (2, 2))
+        self.assertEqual(tap.identify_retries, 1)
+        self.assertTrue(tap.healthy and tap.confirmed)
+
+    def test_a_clean_first_read_is_not_retried(self):
+        tap, model, _, _ = transport()
+        with patch.object(tap, "reset", wraps=tap.reset) as reset:
+            tap.identify()
+        self.assertEqual((reset.call_count, tap.identify_retries), (1, 0))
+
+    def test_all_ones_twice_is_an_unhealthy_transport_after_one_retry_only(self):
+        tap, model, _, _ = transport()
+        with self.first_reads_all_ones(tap, 2) as dr:
+            with self.assertRaisesRegex(v.PolicyError,
+                                        r"unexpected target.*0xffffff.*after one TAP reset"):
+                tap.identify()
+        self.assertEqual(dr.call_count, 2)
+        self.assertEqual(tap.identify_retries, 1)
+        self.assertFalse(tap.healthy)
+        self.assertEqual(model.instructions, [])
+
+    def test_a_wrong_target_is_not_retried(self):
+        tap, model, _, _ = transport()
+        model.code = 0x41111043
+        with self.assertRaises(v.PolicyError) as caught:
+            tap.identify()
+        self.assertEqual(tap.identify_retries, 0)
+        self.assertNotIn("after one TAP reset", str(caught.exception))
+
+    def test_report_records_that_the_identity_read_was_retried(self):
+        tap, model, _, _ = transport()
+        with self.first_reads_all_ones(tap, 1):
+            outcome = v.exercise(tap, 1, 1541, float("inf"))
+        self.assertEqual(outcome["status"], "PASS")
+        self.assertEqual(outcome["identify_retries"], 1)
+        self.assertIn("first IDCODE read was all ones", outcome["detail"])
+        clean = v.exercise(transport()[0], 1, 1541, float("inf"))
+        self.assertEqual(clean["identify_retries"], 0)
+        self.assertNotIn("all ones", clean["detail"])
+
     def test_invalid_ir_capture_closes_policy_below_workload(self):
         tap, model, _, _ = transport()
         tap.identify()

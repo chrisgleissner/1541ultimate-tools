@@ -712,6 +712,28 @@ class DeviceLockTest(unittest.TestCase):
             self.assertIsNone(lock.handle)
         self.assertFalse(os.path.exists(os.path.dirname(self.path)))
 
+    def test_lock_name_defaults_to_c64u_and_accepts_a_device_name(self):
+        self.assertEqual(jt.lock_name(None), "c64u")
+        self.assertEqual(jt.lock_name(""), "c64u")
+        self.assertEqual(jt.lock_name("u64"), "u64")
+        self.assertEqual(jt.lock_name("my-u64_2"), "my-u64_2")
+
+    def test_lock_name_refuses_what_is_not_a_device_name(self):
+        for name in ("../x", "a/b", "u 64", "u64.lock"):
+            with self.subTest(name), self.assertRaisesRegex(jt.JtagError, "U64II_JTAG_LOCK_NAME"):
+                jt.lock_name(name)
+
+    def test_lock_name_is_the_device_in_the_holder_line(self):
+        with mock.patch.object(jt, "LOCK_NAME", "u64"), jt.DeviceLock(wait=0):
+            with open(self.path) as handle:
+                self.assertRegex(handle.read(), r"device=u64 ")
+
+    def test_help_names_the_lock_setting(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            jt.parse_args(["--help"])
+        self.assertIn("U64II_JTAG_LOCK_NAME=u64", out.getvalue())
+
     def test_lock_is_exclusive_until_exit(self):
         with jt.DeviceLock(wait=0) as lock:
             self.assertIsNotNone(lock.handle)

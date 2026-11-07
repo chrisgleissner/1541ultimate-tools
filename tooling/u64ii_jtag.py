@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import struct
 import sys
 import time
@@ -131,12 +132,24 @@ def bitstream_idcode(data: bytes) -> Optional[int]:
 # One FT232H, several users: a deploy, a console reader, a monitor. They share
 # the per-device lock $DEVICE_LOCK_DIR/c64u.lock (see device_lock.py), the one
 # `tooling/with_device_locks.py c64u -- ...` takes, so they take turns instead
-# of failing to open the adapter or interleaving scans.
-LOCK_PATH = device_lock.lock_path("c64u")
+# of failing to open the adapter or interleaving scans. A cable on another
+# device (a USB-Blaster on the Ultimate 64) takes that device's lock instead:
+# set U64II_JTAG_LOCK_NAME=u64.
+def lock_name(value: Optional[str]) -> str:
+    """The device lock name from U64II_JTAG_LOCK_NAME: letters, digits, _ and -."""
+    name = value or "c64u"
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        raise JtagError(f"U64II_JTAG_LOCK_NAME {name!r} is not a device name "
+                        "(letters, digits, _ and - only)")
+    return name
+
+
+LOCK_NAME = lock_name(os.environ.get("U64II_JTAG_LOCK_NAME"))
+LOCK_PATH = device_lock.lock_path(LOCK_NAME)
 
 
 class DeviceLock:
-    """The c64u lock. Waits up to `wait` seconds; 0 means do not wait.
+    """The device lock (c64u unless U64II_JTAG_LOCK_NAME says otherwise). Waits up to `wait` seconds; 0 means do not wait.
 
     A lock held by one of this process's ancestors (with_device_locks.py, or
     flock(1)) already covers this process and is not taken again. Otherwise
@@ -152,7 +165,7 @@ class DeviceLock:
             return self
         cmd = " ".join([os.path.basename(sys.argv[0])] + sys.argv[1:])[:200]
         try:
-            self.handle = device_lock.acquire(LOCK_PATH, self.wait, "c64u", cmd,
+            self.handle = device_lock.acquire(LOCK_PATH, self.wait, LOCK_NAME, cmd,
                                               on_wait=lambda: log(f"waiting for {LOCK_PATH}"))
         except device_lock.Busy as busy:
             raise JtagError(f"the FT232H is in use ({LOCK_PATH}: {busy.holder or 'held'})")
@@ -1010,7 +1023,9 @@ def cmd_dump(board: Board, args) -> int:
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="JTAG for the Ultimate 64 Elite II and C64 Ultimate (Artix-7) "
-                    "through an FT232H or a USB-Blaster. Volatile only: nothing writes the flash.")
+                    "through an FT232H or a USB-Blaster. Volatile only: nothing writes the flash.",
+        epilog="The device lock is c64u; set U64II_JTAG_LOCK_NAME=u64 when the "
+               "cable is on the Ultimate 64.")
     parser.add_argument("--url", default=DEFAULT_URL,
                         help=f"pyftdi URL of the FT232H (default {DEFAULT_URL}, "
                              "or $U64II_JTAG_URL); 'blaster' for a USB-Blaster")

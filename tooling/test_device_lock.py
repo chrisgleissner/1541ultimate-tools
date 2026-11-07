@@ -302,6 +302,25 @@ class ToolsTest(TempLocks):
                 self.assertEqual(out.returncode, 0, out.stderr)
                 self.assertRegex(out.stdout, rf"^pid=\d+ device={device} cmd=\S")
 
+    def test_u64ii_jtag_takes_the_lock_named_by_the_environment(self):
+        device, statement = TOOLS["u64ii_jtag"]
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, {"DEVICE_LOCK_DIR": tmp, "U64II_JTAG_LOCK_NAME": "u64"}):
+            self.dir = tmp
+            out = self.tool(statement)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            self.assertRegex(out.stdout, r"^pid=\d+ device=u64 cmd=\S")
+            self.assertEqual(os.listdir(tmp), ["u64.lock"])
+
+    def test_u64ii_jtag_refuses_a_lock_name_with_a_path(self):
+        device, statement = TOOLS["u64ii_jtag"]
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, {"DEVICE_LOCK_DIR": tmp, "U64II_JTAG_LOCK_NAME": "../x"}):
+            self.dir = tmp
+            out = self.tool(statement)
+            self.assertNotEqual(out.returncode, 0)
+            self.assertIn("U64II_JTAG_LOCK_NAME", out.stderr)
+
     def test_tool_under_the_wrapper_runs_without_waiting(self):
         for name, (device, statement) in TOOLS.items():
             with self.subTest(name):
