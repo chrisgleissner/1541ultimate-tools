@@ -38,9 +38,11 @@ Configuration: ~/.config/c64u-mode/config.ini
     [hotkeys]
     stock = Meta+Alt+1
 
-Device lock: every command that touches the board holds the c64u lock (the flock u64ii_jtag.py and
-with-device-locks use) for its whole run and writes 'pid=<pid> cmd=...' into it. Held by someone else: the
-command refuses (with a desktop notification), or waits with --wait. Held by an ancestor process: it runs.
+Device lock: every command that touches the board holds the c64u lock ($DEVICE_LOCK_DIR/c64u.lock, the flock
+u64ii_jtag.py and tooling/with_device_locks.py use; the older C64U_JTAG_LOCK names the file when DEVICE_LOCK_DIR is
+not set) for its whole run and writes 'pid=<pid> ...' into it. Held by someone else: the command refuses (with a
+desktop notification), or waits with --wait. Held by an ancestor process, for example under
+'with_device_locks.py c64u -- c64u-mode ...': it runs.
 
 Power cycles: only with --allow-power-cycle (desktop launchers pass it: pressing one is the consent). The outlet
 must be listed by powerctl under exactly the configured alias (and id), and must not be denied. With the Ultimate
@@ -69,12 +71,17 @@ import time
 import urllib.error
 import urllib.request
 
+import device_lock
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 # plugins import ModeError from "c64u_mode"; when this file runs as a script that must be this module, not a copy
 sys.modules.setdefault("c64u_mode", sys.modules[__name__])
 CONFIG = os.path.expanduser(os.environ.get("C64U_MODE_CONFIG", "~/.config/c64u-mode/config.ini"))
 DATA = os.path.expanduser(os.environ.get("C64U_MODE_DATA", "~/.local/share/c64u-mode"))
-LOCK = os.environ.get("C64U_JTAG_LOCK", "/tmp/1541ultimate-device-locks/c64u.lock")
+# DEVICE_LOCK_DIR is the setting every tool honours; C64U_JTAG_LOCK, the full path of the lock file, is the older
+# name of this tool and applies only when DEVICE_LOCK_DIR is not set.
+LOCK = (device_lock.lock_path("c64u") if os.environ.get(device_lock.LOCK_DIR_ENV)
+        else os.environ.get("C64U_JTAG_LOCK") or device_lock.lock_path("c64u"))
 FLASH_SIZE = 16 * 1024 * 1024
 CODE_SIZE = 4 * 1024 * 1024        # bitstream slot and application slot; the flash drive and the config follow
 FPGA_PART = "xc7a50tfgg484"
@@ -92,20 +99,10 @@ def log(msg: str) -> None:
 
 # ---- the device lock -----------------------------------------------------------------------------------------------
 
-def _ancestors() -> set:
-    pids, pid = set(), os.getppid()
-    while pid > 1 and pid not in pids:
-        pids.add(pid)
-        try:
-            with open(f"/proc/{pid}/stat") as handle:
-                pid = int(handle.read().rsplit(")", 1)[1].split()[1])
-        except (OSError, ValueError, IndexError):
-            break
-    return pids
-
-
 class DeviceLock:
-    """The c64u flock for a whole command. wait 0: refuse at once when someone else holds it."""
+    """The c64u lock for a whole command. wait 0: refuse at once when someone else holds it.
+
+    A lock held by an ancestor process (with_device_locks.py, flock(1)) covers the command."""
 
     def __init__(self, what: str, wait: float = 0.0, path: str | None = None):
         self.what, self.wait, self.path = what, wait, path or LOCK
@@ -114,38 +111,16 @@ class DeviceLock:
     def __enter__(self) -> "DeviceLock":
         if os.environ.get("C64U_MODE_LOCK") == "off":
             return self
-        import fcntl
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        handle = open(self.path, "a+")
-        deadline = time.monotonic() + self.wait
-        while True:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                handle.seek(0)
-                holder = handle.read().strip()
-                if any(f"pid={pid} " in holder + " " for pid in _ancestors()):
-                    handle.close()
-                    return self
-                if time.monotonic() >= deadline:
-                    handle.close()
-                    raise ModeError(f"the C64U is in use ({holder or 'lock held'}); nothing was changed. "
-                                    "Try again later, or pass --wait SECONDS")
-                time.sleep(0.5)
-        handle.seek(0)
-        handle.truncate()
-        handle.write(f"pid={os.getpid()} cmd=c64u-mode {self.what} since={_dt.datetime.now().isoformat(timespec='seconds')}\n")
-        handle.flush()
-        self.handle = handle
+        try:
+            self.handle = device_lock.acquire(self.path, self.wait, "c64u", f"c64u-mode {self.what}")
+        except device_lock.Busy as busy:
+            raise ModeError(f"the C64U is in use ({busy.holder or 'lock held'}); nothing was changed. "
+                            "Try again later, or pass --wait SECONDS")
         return self
 
     def __exit__(self, *exc) -> None:
-        if self.handle:
-            self.handle.seek(0)
-            self.handle.truncate()
-            self.handle.close()
-            self.handle = None
+        device_lock.release(self.handle)
+        self.handle = None
 
 
 # ---- configuration ------------------------------------------------------------------------------------------------

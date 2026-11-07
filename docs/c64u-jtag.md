@@ -185,10 +185,27 @@ jumps straight to `0x30000`.
 Measured at 3 MHz with read-back: FPGA configuration 6.7 s, application load 11-12 s.
 At `--frequency 6e6 --no-verify`: 3.8 s and 1.9 s.
 
-Every command takes the device lock `/tmp/1541ultimate-device-locks/c64u.lock` (set
-`DEVICE_LOCK_DIR` to move it, `U64II_JTAG_LOCK=off` to disable it), waiting up to two
-minutes for another user of the adapter. A lock held by a parent process, such as a
-`with-device-locks c64u -- ...` wrapper, is honoured without deadlocking.
+Every command takes the device lock `c64u.lock` in `$DEVICE_LOCK_DIR` (default
+`/tmp/1541ultimate-device-locks`; `U64II_JTAG_LOCK=off` disables it), waiting up to two
+minutes for another user of the adapter. While it holds the lock, a command writes a
+holder line (`pid=... device=c64u cmd=...`) into the lock file, so a refused user can
+see who has the adapter.
+
+To keep the adapter across several commands, run them under the wrapper that ships
+with the tools:
+
+```bash
+python3 tooling/with_device_locks.py c64u -- tooling/u64ii_jtag.sh probe
+python3 tooling/with_device_locks.py --wait 600 c64u -- ./build-tool --jtag c64u
+```
+
+It takes the named locks, runs the command, and exits with the command's status. It
+exits 75 without running the command when someone else holds a lock (after `--wait`
+seconds, default none). A tool started inside the wrapper recognises the lock as its
+parent's and runs at once. This works for every tool that takes the lock
+(`u64ii_jtag.py`, `c64u_mode.py`, `flash_u64.py`, `jtag_verify.py`). Plain `flock(1)`
+around a tool also works on Linux, because the tools find an ancestor's lock in
+`/proc/locks`, but that lock carries no holder line. Use the wrapper.
 
 `BIT` is `auto` or a path. `auto` picks `external/u64e2_50t.bit` or
 `external/u64e2_100t.bit` from the IDCODE; these are the images that `update.ue2`

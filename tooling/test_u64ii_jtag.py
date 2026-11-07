@@ -763,42 +763,6 @@ class DeviceLockTest(unittest.TestCase):
         self.assertEqual(out.getvalue().count("waiting for"), 1)
 
 
-class AncestorsTest(unittest.TestCase):
-    # A fixed parent pid: under a container entrypoint the real parent can be
-    # pid 1, where the walk stops before it starts.
-    PARENT = 4100
-
-    def setUp(self):
-        getppid = mock.patch.object(jt.os, "getppid", return_value=self.PARENT)
-        getppid.start()
-        self.addCleanup(getppid.stop)
-
-    def test_follows_parent_links_and_stops_on_a_loop(self):
-        stat = mock.mock_open(read_data="4242 (with (odd) name) S 4242 1 1")
-        with mock.patch.object(jt, "open", stat, create=True):
-            self.assertEqual(jt._ancestors(), {self.PARENT, 4242})
-
-    def test_unreadable_proc_stops_at_the_parent(self):
-        with mock.patch.object(jt, "open", side_effect=OSError("no /proc"), create=True):
-            self.assertEqual(jt._ancestors(), {self.PARENT})
-
-    def test_malformed_stat_stops_at_the_parent(self):
-        with mock.patch.object(jt, "open", mock.mock_open(read_data="garbage"), create=True):
-            self.assertEqual(jt._ancestors(), {self.PARENT})
-
-    def test_init_ends_the_walk(self):
-        with mock.patch.object(jt.os, "getppid", return_value=1):
-            self.assertEqual(jt._ancestors(), set())
-
-
-class RealAncestorsTest(unittest.TestCase):
-    @unittest.skipIf(os.getppid() <= 1, "the test runner is a child of init")
-    def test_includes_the_parent_but_not_this_process(self):
-        pids = jt._ancestors()
-        self.assertIn(os.getppid(), pids)
-        self.assertNotIn(os.getpid(), pids)
-
-
 class MpsseTest(unittest.TestCase):
     def test_open_without_pyftdi_says_how_to_get_it(self):
         with mock.patch.dict(sys.modules, {"pyftdi": None, "pyftdi.ftdi": None}), \

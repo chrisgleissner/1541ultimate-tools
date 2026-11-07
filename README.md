@@ -76,6 +76,7 @@ BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii # writes update_<commit>.ue2
 | `tooling/u64ii_gdb.sh` | gdb for the running C64 Ultimate application: tasks as threads, backtraces | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/c64u_monitor.py` | Watches a C64 Ultimate's video stream, REST API and console | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/c64u_mode.py` (`c64u-mode`) | Switches a C64 Ultimate or Ultimate 64 Elite II between firmware setups with one command | [C64 Ultimate firmware setups](#c64-ultimate-firmware-setups) |
+| `tooling/with_device_locks.py` | Runs a command while holding named device locks (`c64u`, `u64`); the tools run inside it without waiting for their parent | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/apply_pr.sh` | Makes a throwaway worktree with upstream pull requests applied | `./build-tool --help` |
 | `vivado/install.sh` | Installs AMD Vivado 2024.1 for Artix-7 without interaction | [docs/vivado-install.md](docs/vivado-install.md) |
 

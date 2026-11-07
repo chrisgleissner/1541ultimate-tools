@@ -39,12 +39,13 @@ drives the pins of an unpowered FPGA.
 from __future__ import annotations
 
 import argparse
-import fcntl
 import os
 import struct
 import sys
 import time
 from typing import List, Optional, Tuple
+
+import device_lock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -128,29 +129,18 @@ def bitstream_idcode(data: bytes) -> Optional[int]:
 
 
 # One FT232H, several users: a deploy, a console reader, a monitor. They share
-# the per-device flock that `with-device-locks c64u -- ...` takes, so they
-# take turns instead of failing to open the adapter or interleaving scans.
-LOCK_PATH = os.path.join(os.environ.get("DEVICE_LOCK_DIR", "/tmp/1541ultimate-device-locks"),
-                         "c64u.lock")
-
-
-def _ancestors() -> set:
-    pids, pid = set(), os.getppid()
-    while pid > 1 and pid not in pids:
-        pids.add(pid)
-        try:
-            with open(f"/proc/{pid}/stat") as handle:
-                pid = int(handle.read().rsplit(")", 1)[1].split()[1])
-        except (OSError, ValueError, IndexError):
-            break
-    return pids
+# the per-device lock $DEVICE_LOCK_DIR/c64u.lock (see device_lock.py), the one
+# `tooling/with_device_locks.py c64u -- ...` takes, so they take turns instead
+# of failing to open the adapter or interleaving scans.
+LOCK_PATH = device_lock.lock_path("c64u")
 
 
 class DeviceLock:
-    """The c64u flock. Waits up to `wait` seconds; 0 means do not wait.
+    """The c64u lock. Waits up to `wait` seconds; 0 means do not wait.
 
-    A lock held by one of this process's ancestors (with-device-locks writes
-    its pid into the file) already covers this process and is not taken again.
+    A lock held by one of this process's ancestors (with_device_locks.py, or
+    flock(1)) already covers this process and is not taken again. Otherwise
+    the lock file carries a holder line while this process holds it.
     """
 
     def __init__(self, wait: float = 120.0):
@@ -160,34 +150,17 @@ class DeviceLock:
     def __enter__(self) -> "DeviceLock":
         if os.environ.get("U64II_JTAG_LOCK") == "off":
             return self
-        os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
-        handle = open(LOCK_PATH, "a+")
-        deadline = time.monotonic() + self.wait
-        announced = False
-        while True:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                self.handle = handle
-                return self
-            except BlockingIOError:
-                handle.seek(0)
-                holder = handle.read()
-                if any(f"pid={pid} " in holder for pid in _ancestors()):
-                    handle.close()
-                    return self
-                if time.monotonic() >= deadline:
-                    handle.close()
-                    raise JtagError(f"the FT232H is in use ({LOCK_PATH}: "
-                                    f"{holder.strip() or 'held'})")
-                if not announced and self.wait:
-                    log(f"waiting for {LOCK_PATH}")
-                    announced = True
-                time.sleep(0.2)
+        cmd = " ".join([os.path.basename(sys.argv[0])] + sys.argv[1:])[:200]
+        try:
+            self.handle = device_lock.acquire(LOCK_PATH, self.wait, "c64u", cmd,
+                                              on_wait=lambda: log(f"waiting for {LOCK_PATH}"))
+        except device_lock.Busy as busy:
+            raise JtagError(f"the FT232H is in use ({LOCK_PATH}: {busy.holder or 'held'})")
+        return self
 
     def __exit__(self, *exc) -> None:
-        if self.handle:
-            self.handle.close()
-            self.handle = None
+        device_lock.release(self.handle)
+        self.handle = None
 
 
 def log(message: str) -> None:

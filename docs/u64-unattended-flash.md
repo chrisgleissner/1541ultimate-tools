@@ -91,19 +91,21 @@ another process listens on the gdb-server port.
 # A build of the same commit as the .u64, for the symbols
 BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64
 
-with-device-locks u64 -- python3 tooling/flash_u64.py \
-    --host 192.168.1.13 \
+python3 tooling/with_device_locks.py u64 -- python3 tooling/flash_u64.py \
+    --host u64.local \
     --u64 update_v3.15-339-gd5686424f.u64 \
     --sym-elf target/u64/nios2/updater/result/update.elf \
     --power-button-cmd "python3 tooling/switchbot_press.py --mac AA:BB:CC:DD:EE:FF --hold 0" \
     --expect-commit d5686424f
 ```
 
-The script takes the `u64` device lock itself unless an ancestor process
-(`with-device-locks`) already holds it; `FLASH_U64_LOCK=off` disables it for
-host experiments. The Intel tools are located the same way as in
-`build_and_deploy_u64.sh` (`INTEL_FPGA_ROOT`, `QUARTUS_ROOTDIR`, or the usual
-install directories).
+The script takes the `u64` device lock itself (`u64.lock` in `$DEVICE_LOCK_DIR`,
+default `/tmp/1541ultimate-device-locks`) unless an ancestor process already
+holds it, as `tooling/with_device_locks.py` does; `FLASH_U64_LOCK=off` disables
+it for host experiments. The wrapper is useful when other commands must not use
+the adapter between the build and the flash. The Intel tools are located the same
+way as in `build_and_deploy_u64.sh` (`INTEL_FPGA_ROOT`, `QUARTUS_ROOTDIR`, or the
+usual install directories).
 
 A verified run, power button pressed by hand:
 

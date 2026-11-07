@@ -22,7 +22,8 @@ import time
 import unittest
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 import c64u_mode as cm  # noqa: E402
 
 LOG = cm.log  # the real log(); Base patches cm.log
@@ -463,7 +464,7 @@ class LockTest(Base):
     def test_takes_writes_and_clears_the_holder(self):
         with cm.DeviceLock("alt"):
             with open(cm.LOCK) as f:
-                self.assertIn(f"pid={os.getpid()} cmd=c64u-mode alt", f.read())
+                self.assertRegex(f.read(), f"^pid={os.getpid()} device=c64u cmd=c64u-mode alt since=")
         with open(cm.LOCK) as f:
             self.assertEqual(f.read(), "")
 
@@ -485,12 +486,25 @@ class LockTest(Base):
             with cm.DeviceLock("x") as lock:
                 self.assertIsNone(lock.handle)
 
-    def test_ancestors(self):
-        self.assertIn(os.getppid(), cm._ancestors())
 
-    def test_ancestors_stop_at_an_unreadable_process(self):
-        with mock.patch("builtins.open", side_effect=OSError("gone")):
-            self.assertEqual(cm._ancestors(), {os.getppid()})
+class LockPathTest(unittest.TestCase):
+    """Which file is the c64u lock: DEVICE_LOCK_DIR first, the older C64U_JTAG_LOCK second, then the default."""
+
+    def lock(self, **env):
+        base = {k: v for k, v in os.environ.items() if k not in ("DEVICE_LOCK_DIR", "C64U_JTAG_LOCK")}
+        out = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {HERE!r}); "
+                              "import c64u_mode; print(c64u_mode.LOCK)"],
+                             capture_output=True, text=True, check=True, env={**base, **env})
+        return out.stdout.strip()
+
+    def test_default_and_device_lock_dir(self):
+        self.assertEqual(self.lock(), "/tmp/1541ultimate-device-locks/c64u.lock")
+        self.assertEqual(self.lock(DEVICE_LOCK_DIR="/run/locks"), "/run/locks/c64u.lock")
+
+    def test_old_variable_applies_only_without_device_lock_dir(self):
+        self.assertEqual(self.lock(C64U_JTAG_LOCK="/tmp/old.lock"), "/tmp/old.lock")
+        self.assertEqual(self.lock(C64U_JTAG_LOCK="/tmp/old.lock", DEVICE_LOCK_DIR="/run/locks"),
+                         "/run/locks/c64u.lock")
 
 
 # ---- modes, ensure, plugins, desktop, main ----------------------------------------------------------------------------
