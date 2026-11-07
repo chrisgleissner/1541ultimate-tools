@@ -6,6 +6,8 @@ Firmware for the 1541 Ultimate family: FPGA bitstreams, embedded C/C++ (RISC-V, 
 If `AGENTS.local.md` exists in the checkout root, read it too. It holds machine- and contributor-specific context (devices, addresses, power control, other trees). Never copy its contents into commits, PRs, issues or any tracked file. A template is in `tooling/docs/agents/AGENTS.local.example.md`.
 
 The tools in this checkout (`build`, `build-tool`, `tooling/`) come from [1541ultimate-tools](https://github.com/chrisgleissner/1541ultimate-tools) and are git-excluded. Never commit them, and never edit tracked files to work around a tooling problem. Open a procedure in `tooling/docs/agents/` only when its task comes up, and run a tool with `--help` before guessing options.
+The skills `c64u-jtag-run`, `u2pl-recover`, `u64-flash-unattended`, `pr-minimal-diff`, `vhdl-analysis` and
+`device-failure-triage` are installed in `.claude/skills/` and `.agents/skills/`; use one when its task comes up.
 
 ## Targets
 
@@ -68,7 +70,7 @@ Deploy only when the task asks for it, to a device nobody else is using. Do not 
 
 - Host unit tests sit next to their code (for example `software/api/tests/`). Run the existing tests for what you change and add tests for non-trivial logic.
 - Hardware end-to-end suites are the release gate: `./run-tests --list`, `./run-tests -s <suite> $U64_HOST`. `python3 tests/lib/health.py -H $U64_HOST` shows which listener answers. See `tests/README.md`.
-- **New or changed e2e suite:** a suite that `./run-tests` cannot select is in no gate. Add a `Suite(...)` entry in `run-tests` (profile and a one-line comment saying what it proves), regenerate the matrix with `python3 tools/docs/update_test_docs.py`, and update the README prose. Before the first commit run `python3 tests/lib/registry_test.py` and `./run-tests --list | grep <name>`. Do not report hardware green before all of these exist.
+- **New or changed e2e suite:** a suite that `./run-tests` cannot select is in no gate. Add a `Suite(...)` entry in `run-tests` (profile and a one-line comment saying what it proves), regenerate the matrix with `python3 tools/docs/update_test_docs.py`, and update the README prose. Before the first commit run `python3 tests/lib/registry_test.py` and `./run-tests --list | grep <name>`.
 - **Red/green on hardware, per defect.** Run the test on firmware that still has the defect and record the failure. Apply the fix, rebuild, deploy, run the same test unchanged, and record the pass. With several fixes in one change, revert exactly one, rebuild, deploy and confirm only that defect's check fails: the first failure masks the others. If a defect is real but silent, say so and leave the code alone. Never claim red/green for what was only reasoned about.
 - Ground every expected value in the firmware source and confirm it on the device; the manuals under `doc/` have drifted.
 - **A failing check is a test defect until proven otherwise.** Verify independently that it measures what it claims, then compare with a tree where it passes, at the level of the code path. Report a firmware defect only after that.
@@ -78,9 +80,9 @@ Deploy only when the task asks for it, to a device nobody else is using. Do not 
 ## Code standards
 
 1. Match the surrounding style. Touch only what the task needs, reuse small local code, keep the diff minimal. Refactor only when no direct fix is clean. Make the smallest compatibility-preserving fix for the reproduced bug, and add no speculative helpers.
-2. Keep use-case behaviour out of shared code. Localise a workflow-specific feature in its own module. Use a derived type or narrow hook when behaviour varies by type, and a local conditional when it varies by runtime state. Name by capability, not by caller. Share data through a neutral accessor; never copy tables.
+2. Keep use-case behaviour out of shared code. Localise a workflow-specific feature in its own module. Use a derived type or narrow hook when behaviour varies by type, and a local conditional when it varies by runtime state. Share data through a neutral accessor; never copy tables.
 3. Keep feature-specific locks, `volatile` and barriers out of shared code; document a benign bounded race at the call site.
-4. Do not limit a fix to one hardware target without a hardware reason; a missing device is not one. `#if U64 == 1` excludes the Elite II and C64 Ultimate, which usually need the same fix (it left the speaker clicking on both after a freezer mute fix). Say in the PR which targets you verified on hardware.
+4. Do not limit a fix to one hardware target without a hardware reason; a missing device is not one. `#if U64 == 1` excludes the Elite II and C64 Ultimate, which usually need the same fix. Say in the PR which targets you verified on hardware.
 5. When the defect is in a shared primitive, say in one PR sentence where the fix belongs. Fix the shared thing when its callers expect the correct behaviour. Fix it separately, naming the call sites you cannot test, when correcting it changes them. Write local code only when the primitive cannot express what you need. Never route around a broken primitive.
 6. Formatting goes through `software/system/small_printf.cc`, which has no length modifiers (`%l`, `%ll`, `%z`): cast to `int` or print halves. Unsupported libc formatting pulls newlib into RISC-V links (missing `_kill`, `_getpid`). Its `sscanf` ignores literal characters and has no `%c`.
 7. Comments say why, in one or two lines. An address or measurement is worth a line when it is the evidence for the decision.
