@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# u2_flash.sh — thin wrapper around tools/api/u2_flash.py for U2+L
+# u2_flash.sh — thin wrapper around tooling/u2_flash.py for U2+L
 # REST-based firmware installs (upload + REST-driven menu flash + safe
 # power-cycle). All real logic lives in the Python script; this wrapper
 # only resolves the build-tool-native defaults (local artifact, branch,
@@ -8,7 +8,7 @@
 run_u2_flash() {
     require_command python3
 
-    local script="$REPO_DIR/tools/api/u2_flash.py"
+    local script="$TOOLING_DIR/u2_flash.py"
     [ -f "$script" ] || die_usage "U2+L flash script not found: $script"
 
     local artifact

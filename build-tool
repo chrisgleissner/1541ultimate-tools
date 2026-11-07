@@ -226,13 +226,16 @@ ${COLOR_BOLD}VERIFICATION OPTIONS${COLOR_RESET}
                              with none set, the check is skipped.
 
 ${COLOR_BOLD}U2+L REST FLASH${COLOR_RESET}
-      --u2-flash [ARGS...]   Install U2+L firmware by uploading update.u2l and
-                             driving the on-device menu over REST (upload,
-                             verify, browse, and monitor a flash to completion;
-                             power-cycle requires an explicit --power-host and
-                             --confirm-power-cycle). Consumes the rest of the
-                             command line; run with --u2-flash --help for the
-                             full option list (implemented in tools/api/u2_flash.py).
+      --u2-flash [ARGS...]   Update a working U2+L: upload update.u2l over FTP, run it
+                             from the cartridge's menu with keys sent through the
+                             C64 Ultimate it is plugged into, and watch it finish.
+                             Consumes the rest of the command line. Hosts come from
+                             --host and --c64-host, or U2_FLASH_HOST and
+                             U2_FLASH_C64_HOST (environment or .build-tool.env).
+                             Needs --confirm-flash to flash and --confirm-power-cycle
+                             to restart the C64 Ultimate afterwards. Holds the c64u
+                             device lock. Run --u2-flash --help for every option
+                             (implemented in tooling/u2_flash.py).
 
 ${COLOR_BOLD}NOTES${COLOR_RESET}
   u64ii embeds the Artix-7 bitstreams checked in under external/; building
@@ -265,7 +268,7 @@ ${COLOR_BOLD}EXAMPLES${COLOR_RESET}
   ${SCRIPT_NAME} --list-targets
   ${SCRIPT_NAME} --u2-flash --dry-run
   ${SCRIPT_NAME} --u2-flash --upload-only
-  ${SCRIPT_NAME} --u2-flash --confirm-flash --power-host <power-switch-host> --confirm-power-cycle
+  ${SCRIPT_NAME} --u2-flash --host <u2-host> --c64-host <c64u-host> --dest-root /<volume>/Firmware/latest --confirm-flash --confirm-power-cycle
 EOF
 }
 
