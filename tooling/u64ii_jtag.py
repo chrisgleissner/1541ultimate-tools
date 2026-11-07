@@ -875,8 +875,11 @@ class Board:
             raise
         self.chain.set_outputs(0)
 
-    def console(self, seconds: float, sink=sys.stdout) -> int:
-        """Copy the CPU's UART output to `sink` for `seconds` (0 = until Ctrl-C)."""
+    def console(self, seconds: float, sink=None) -> int:
+        """Copy the CPU's UART output to `sink` (default: sys.stdout at the time of the call) for `seconds`
+        (0 = until Ctrl-C)."""
+        if sink is None:
+            sink = sys.stdout
         deadline = None if seconds <= 0 else time.monotonic() + seconds
         known, total = 0, 0
         while deadline is None or time.monotonic() < deadline:

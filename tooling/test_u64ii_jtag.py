@@ -643,11 +643,6 @@ def run_main(argv, model=None):
     return rc, out.getvalue(), model, ftdi
 
 
-def console_sink(sink):
-    """Board.console binds sys.stdout when the module loads, so redirect its default."""
-    return mock.patch.object(jt.Board.console, "__defaults__", (sink,))
-
-
 class RecordingFtdi:
     """Records MPSSE writes and serves canned reads."""
 
@@ -1147,20 +1142,19 @@ class BoardEdgeTest(unittest.TestCase):
         self.assertEqual(b.console(0.2, sink), 257)
         self.assertEqual(sink.getvalue(), (bytes(range(256)) + b"!").decode("latin-1"))
 
-    @unittest.expectedFailure
     def test_console_follows_a_redirected_stdout(self):
-        # Suspected defect: Board.console's `sink=sys.stdout` default is bound at
-        # import (u64ii_jtag.py:671), so `console` output ignores a later
-        # redirection of sys.stdout, unlike every log() line.
-        # No console_sink here: patching the default would reproduce the defect
-        # inside the test, and the test could then never pass after a fix.
-        # Until the fix, "hello" goes to the stdout of the test run.
+        # The default sink is looked up when console() runs, not when the module loads.
         b, model, _ = board()
         model.chain.console_fifo.extend(b"hello")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             b.console(0.1)
         self.assertEqual(out.getvalue(), "hello")
+        later = io.StringIO()
+        model.chain.console_fifo.extend(b"again")
+        with contextlib.redirect_stdout(later):
+            b.console(0.1)
+        self.assertEqual(later.getvalue(), "again")
 
 
 class CommandLineTest(unittest.TestCase):
@@ -1282,16 +1276,14 @@ class CommandLineTest(unittest.TestCase):
         path = self.file("ultimate.bin", data=b"\x13\x00\x00\x00" * 8)
         model = ArtixModel()
         model.chain.console_fifo.extend(b"*** Ultimate\n")
-        sink = io.StringIO()
-        with console_sink(sink), mock.patch.object(jt.Board, "run_application",
-                                                   autospec=True) as load:
+        with mock.patch.object(jt.Board, "run_application", autospec=True) as load:
             rc, out, model, _ = run_main(["run", "--warm", "--no-verify", "--console", "0.1",
                                           "--bin", path], model)
         self.assertEqual(rc, 0)
         load.assert_called_once_with(mock.ANY, b"\x13\x00\x00\x00" * 8, verify=False)
         self.assertFalse(model.jprogram)
         self.assertIn("--warm: keeping the running FPGA image", out)
-        self.assertEqual(sink.getvalue(), "*** Ultimate\n")
+        self.assertIn("*** Ultimate\n", out)               # the console text goes to the redirected stdout
 
     def test_warm_run_needs_a_running_design(self):
         path = self.file("ultimate.bin", data=bytes(8))
@@ -1352,13 +1344,10 @@ class CommandLineTest(unittest.TestCase):
     def test_console_command_stops_quietly_on_ctrl_c(self):
         model = ArtixModel()
         model.chain.console_fifo.extend(b"READY.\n")
-        sink = io.StringIO()
         self.sleep.side_effect = KeyboardInterrupt
-        with console_sink(sink):
-            rc, out, _, _ = run_main(["console"], model)
+        rc, out, _, _ = run_main(["console"], model)
         self.assertEqual(rc, 0)
-        self.assertEqual(sink.getvalue(), "READY.\n")
-        self.assertEqual(out, "")
+        self.assertEqual(out, "READY.\n")
 
     def test_console_command_needs_a_running_design(self):
         model = ArtixModel()
