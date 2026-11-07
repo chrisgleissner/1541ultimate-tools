@@ -68,6 +68,7 @@ BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii # writes update_<commit>.ue2
 | `tooling/read_u64_uart_terminal.sh` | Ultimate 64 console output from a USB-TTL adapter on the debug UART (the Ultimate 64 image has no JTAG UART) | `./build-tool --uart-monitor u64 [--uart-port DEVICE]` |
 | `tooling/flash_u64.py` | Flashes an Ultimate 64 Elite with nobody at the keyboard | [docs/u64-unattended-flash.md](docs/u64-unattended-flash.md) |
 | `tooling/u64ii_jtag.sh` | C64 Ultimate / Ultimate 64 Elite II over JTAG (FT232H or USB-Blaster): run an FPGA image and application from RAM, read the console and memory | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
+| `tooling/u2_flash.py` | Updates a working UII+L: uploads a `.u2l`, runs it from the cartridge menu with keys sent through the C64 Ultimate it is plugged into, and watches it finish | [docs/agents/u2pl-deploy.md](docs/agents/u2pl-deploy.md), `./build-tool --u2-flash --help` |
 | `tooling/u2pl_jtag.py` | UII+L over Adafruit FT232H: inspect a `.u2l`, back up flash, try an FPGA in SRAM, or program and verify the boot images | [docs/u2pl-jtag.md](docs/u2pl-jtag.md) |
 | `tooling/u2pl_jtag_sample.py` | UII+L reset-line diagnosis through read-only ECP5 boundary scan; requires pyftdi | [Startup diagnosis and bisecting](docs/u2pl-jtag.md#diagnose-startup-and-bisect-packages) |
 | `tooling/build_and_deploy_u64ii.sh`, `tooling/read_u64ii_jtag_terminal.sh` | Run the built C64 Ultimate application from RAM; read its console | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
@@ -526,6 +527,7 @@ the procedure. `install.sh` installs them with the agent guide.
 | Skill | Use it for |
 |---|---|
 | `c64u-jtag-run` | Running a build or an upstream PR on a C64 Ultimate or Elite II over JTAG, from RAM |
+| `u2pl-flash` | Updating a working Ultimate II+L through the C64 Ultimate it is plugged into |
 | `u2pl-recover` | Recovering an Ultimate II+L that does not boot, and bisecting the build that broke it |
 | `u64-flash-unattended` | Flashing an Ultimate 64 Elite without a person at the keyboard |
 | `pr-minimal-diff` | Cutting a firmware pull request down to the change it needs |

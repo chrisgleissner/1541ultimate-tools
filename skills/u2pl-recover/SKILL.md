@@ -5,7 +5,7 @@ description: Recover an Ultimate II+L cartridge that does not boot over ECP5 JTA
 
 # Recover an Ultimate II+L that does not boot
 
-The U2+L has no golden or fallback FPGA partition. A bad image in the boot regions can only be repaired over JTAG. The tool is `tooling/u2pl_jtag.py`; its read-only diagnosis is `tooling/u2pl_jtag_sample.py`. Procedure, wiring, flash map and bisect method: https://github.com/chrisgleissner/1541ultimate-tools/blob/{{TOOLS_REF}}/docs/u2pl-jtag.md. A working cartridge is updated as in `tooling/docs/agents/u2pl-deploy.md`.
+The U2+L has no golden or fallback FPGA partition. A bad image in the boot regions can only be repaired over JTAG. The tool is `tooling/u2pl_jtag.py`; its read-only diagnosis is `tooling/u2pl_jtag_sample.py`. Procedure, wiring, flash map and bisect method: https://github.com/chrisgleissner/1541ultimate-tools/blob/{{TOOLS_REF}}/docs/u2pl-jtag.md. A working cartridge is updated with the `u2pl-flash` skill, as in `tooling/docs/agents/u2pl-deploy.md`.
 
 ## Rules
 
