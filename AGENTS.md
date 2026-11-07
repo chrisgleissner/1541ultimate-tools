@@ -34,11 +34,13 @@ reference; `tooling/c64u_modes/README.md` describes plugins.
 - Other firmware setups are added as plugins, not by editing this repository. Every `*.py` in `tooling/c64u_modes/`
   and in the directories listed in `$C64U_MODE_PLUGINS` (colon-separated) that defines `register(registry, config)` is
   loaded. A plugin reaches the board only through `ctx.board`, so `--dry-run` and the tests can replace it.
-- Every command that touches the board holds the c64u device lock (`/tmp/1541ultimate-device-locks/c64u.lock`, the
-  lock that `u64ii_jtag.py` and `with-device-locks` use) for its whole run. When someone else holds it, the command
-  refuses, or waits when called with `--wait <seconds>`. Never remove or bypass the lock to run a command.
+- Every command that touches the board holds the c64u device lock (`$DEVICE_LOCK_DIR/c64u.lock`, default
+  `/tmp/1541ultimate-device-locks/c64u.lock`, the lock that `u64ii_jtag.py` and `tooling/with_device_locks.py` use) for
+  its whole run. When someone else holds it, the command refuses, or waits when called with `--wait <seconds>`. A lock
+  held by an ancestor process, for example `python3 tooling/with_device_locks.py c64u -- c64u-mode ...`, covers the
+  command. Never remove or bypass the lock to run a command.
 - A power cycle needs `--allow-power-cycle`. The outlet must be listed by `powerctl` under exactly the configured
-  alias and id, and must not be in the deny list. The tool then powers off through REST first. Pass the flag only when
+  alias and id, and must not be in the `deny_outlets` list of the configuration (the code has no built-in names). The tool then powers off through REST first. Pass the flag only when
   the current task authorizes a restart of the board.
 - Never test the power-cycle guards by actually cycling power. Use `--dry-run` and the unit tests, which replace the
   board with a fake.

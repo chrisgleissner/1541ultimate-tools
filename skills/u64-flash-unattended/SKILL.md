@@ -5,7 +5,7 @@ description: Flash firmware onto an Ultimate 64 Elite (MK1, Nios II) without any
 
 # Flash an Ultimate 64 Elite unattended
 
-`tooling/flash_u64.py` does the whole flow. How it works, the answer table and the pitfalls: https://github.com/chrisgleissner/1541ultimate-tools/blob/{{TOOLS_REF}}/docs/u64-unattended-flash.md. Flashing is persistent. Do it only when the task asks, on a board nobody else is using. The tool takes the u64 device lock itself; never delete or bypass it.
+`tooling/flash_u64.py` does the whole flow. How it works, the answer table and the pitfalls: https://github.com/chrisgleissner/1541ultimate-tools/blob/{{TOOLS_REF}}/docs/u64-unattended-flash.md. Flashing is persistent. Do it only when the task asks, on a board nobody else is using. The tool takes the u64 device lock itself; never delete or bypass it. To keep other commands away from the adapter between the build and the flash, run it as `python3 tooling/with_device_locks.py u64 -- python3 tooling/flash_u64.py ...`.
 
 ## Rules
 

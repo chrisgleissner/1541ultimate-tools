@@ -5,7 +5,7 @@ description: Run a 1541ultimate firmware build, or an upstream pull request, on 
 
 # Run a build on a C64 Ultimate over JTAG
 
-Everything loaded here is volatile: a power cycle returns the board to its flashed firmware. The tools take the c64u device lock themselves; never delete or bypass it, and never run another JTAG program on the adapter at the same time. A shutdown, power cycle or flash needs the current task to ask for it.
+Everything loaded here is volatile: a power cycle returns the board to its flashed firmware. The tools take the c64u device lock themselves; never delete or bypass it, and never run another JTAG program on the adapter at the same time. To hold the lock across several commands, start them as `python3 tooling/with_device_locks.py c64u -- COMMAND`; the tools run inside it without waiting. A shutdown, power cycle or flash needs the current task to ask for it.
 
 The procedure, wiring and recovery are in https://github.com/chrisgleissner/1541ultimate-tools/blob/{{TOOLS_REF}}/docs/c64u-jtag.md. Read the section for the step you are on. The host is `$C64U_HOST`, from the environment or `.build-tool.env`.
 
