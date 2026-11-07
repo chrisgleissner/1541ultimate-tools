@@ -134,6 +134,20 @@ the flash design and, with it, the older flash firmware; always redeploy a known
 before measuring anything. And this only helps for a stalled fabric. It is not part of
 the normal edit, build, deploy loop.
 
+## The FTP deploy path depends on the USB slot
+
+`build-tool -d u64` uploads to `/Usb1/firmware/u64/custom/` by default. The volume name
+follows the USB slot that holds the stick: on the bench Ultimate 64 the stick is in the
+second slot, the FTP root lists `Temp`, `Flash` and `USB2`, and the default directory does
+not exist, so the upload fails with exit status 2. Check the volume names with
+`curl ftp://<device>/ --list-only` and pass the directory explicitly:
+
+```
+./build-tool --deploy-only -d u64 --deploy-host my-u64 --deploy-path /USB2/firmware/u64/custom/
+```
+
+`./build` reads `DEPLOY_PATH` instead. The tool does not detect the volume.
+
 ## Recovering a wedged board during testing
 
 Re-running the deploy script is the normal recovery, which is why the end-to-end suites

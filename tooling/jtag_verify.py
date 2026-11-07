@@ -100,6 +100,7 @@ class SafeTap:
         self.width, self.id_instruction, self.ids = PROFILES[profile]
         self.confirmed = False
         self.healthy = True
+        self.identify_retries = 0
 
     def reset(self):
         if not self.healthy:
@@ -147,11 +148,22 @@ class SafeTap:
 
     def identify(self):
         self.reset()
-        value = self.dr((1 << 96) - 1, 96, True)
+        ones = (1 << 96) - 1
+        value = self.dr(ones, 96, True)
+        retried = ""
+        if value == ones:
+            # A cable left in an unfinished shift, or with its outputs off, by a
+            # previous user reads as all ones on the first scan. One more TAP
+            # reset (still no CPU or FPGA reset) and one re-read tell that from
+            # a missing target; the retry is recorded in the report.
+            self.identify_retries += 1
+            retried = " (after one TAP reset and re-read of an all-ones IDCODE)"
+            self.reset()
+            value = self.dr(ones, 96, True)
         code = value & 0xFFFFFFFF
         if code & 0x0FFFFFFF not in self.ids or value >> 32 != (1 << 64) - 1:
             self.healthy = False
-            raise PolicyError(f"unexpected target or multi-device chain: 0x{value:024x}")
+            raise PolicyError(f"unexpected target or multi-device chain: 0x{value:024x}{retried}")
         self.confirmed = True
         return code
 
@@ -285,7 +297,10 @@ def exercise(tap, cycles, seed, deadline):
             if tap.dr(0xFFFFFFFF, 32, True) != code:
                 raise jt.JtagError(f"IDCODE changed cycle={cycle} after bits={length}")
     elapsed = time.monotonic() - started
-    return result("JTAG-SCAN", "PASS", "IR capture, IDCODE and one-bit BYPASS agree",
+    detail = "IR capture, IDCODE and one-bit BYPASS agree"
+    if tap.identify_retries:
+        detail += "; the first IDCODE read was all ones, one TAP reset and re-read followed"
+    return result("JTAG-SCAN", "PASS", detail, identify_retries=tap.identify_retries,
                   covers=["TAP-ID", "TAP-IR", "TAP-BYPASS", "SHIFT-BITS", "SHIFT-BYTES", "SHIFT-TMS"],
                   idcode=f"0x{code:08x}", bypass_scans=scans, compared_bits=bits, observed_bit_errors=0,
                   elapsed_s=elapsed, bits_per_s=bits / max(elapsed, 1e-9),

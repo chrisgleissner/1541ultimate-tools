@@ -33,6 +33,13 @@
 # untracked SKILL.md is handled like the guide files: replaced when it equals
 # the shipped copy or the previous install's copy, and otherwise moved to
 # SKILL.md.local-<YYYYmmdd-HHMMSS> in the same directory first.
+#
+# Files that an earlier release installed and this repository no longer ships
+# are listed in RETIRED, with the SHA-256 of every version that was shipped. An
+# install removes such a file from CHECKOUT and reports it, but only when the
+# checkout does not track it and its content equals one of those versions. A
+# file that the checkout tracks, or that differs (a local edit, a file of the
+# same name from elsewhere), stays and is reported. --dry-run only reports.
 
 set -euo pipefail
 
@@ -46,7 +53,7 @@ CHECKOUT=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run) DRY_RUN=1 ;;
-        -h|--help) sed -n '2,35p' "$HERE/install.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,42p' "$HERE/install.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) die "unknown option $1" ;;
         *) [[ -z $CHECKOUT ]] || die "only one checkout, please"; CHECKOUT=$1 ;;
     esac
@@ -112,6 +119,13 @@ done
 GUIDE=(AGENTS.md CLAUDE.md)
 GUIDE_RECORD=.1541ultimate-tools-guide
 LOCAL_GUIDE=AGENTS.local.md
+
+# Installed by an earlier release, no longer shipped: "PATH SHA256 [SHA256...]".
+# tooling/recover_ultimate.py is not listed: this repository never shipped it.
+RETIRED=(
+    # removed in #24; the U64 has no JTAG UART, use --uart-monitor u64
+    "tooling/read_u64_jtag_terminal.sh 1745a66339db53a5fb6020f35df788b9b09dd68f00cc0776904f405820605394"
+)
 
 # The paths git must ignore in CHECKOUT, anchored at its top so that a
 # directory called build or tooling deeper in the tree stays visible.
@@ -277,6 +291,31 @@ for i in "${!SKILL_FILES[@]}"; do
     if [[ ${SKILL_ACTION[$i]} != same ]]; then
         run mkdir -p "$CHECKOUT/$(dirname "$file")"
         run cp -f "$RENDERED/skill-$(basename "$(dirname "$file")").md" "$CHECKOUT/$file"
+    fi
+done
+
+for entry in "${RETIRED[@]}"; do
+    read -r -a fields <<< "$entry"
+    file=${fields[0]}
+    [[ -e $CHECKOUT/$file || -L $CHECKOUT/$file ]] || continue
+    if git -C "$CHECKOUT" ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
+        log "retired tool $file is tracked by the checkout; left alone"
+        continue
+    fi
+    if [[ -L $CHECKOUT/$file || ! -f $CHECKOUT/$file ]]; then
+        log "retired tool $file is not a regular file; left alone"
+        continue
+    fi
+    current="$(sha256 "$CHECKOUT/$file")"
+    match=0
+    for known in "${fields[@]:1}"; do [[ $current == "$known" ]] && match=1; done
+    if [[ $match -eq 0 ]]; then
+        log "retired tool $file differs from every version this repository shipped; left alone"
+    elif [[ $DRY_RUN -eq 1 ]]; then
+        log "would remove retired tool $file"
+    else
+        rm -f -- "$CHECKOUT/$file"
+        log "removed retired tool $file"
     fi
 done
 

@@ -80,6 +80,9 @@ this machine by its serial number:
 U64II_JTAG_URL=blaster:8aB75VK4 tooling/u64ii_jtag.sh probe
 ```
 
+The tool takes the `c64u` device lock. A USB-Blaster on the Ultimate 64 should take that
+machine's lock instead: set `U64II_JTAG_LOCK_NAME=u64`.
+
 Clones whose serial numbers clash are named by bus and address instead, in hex as
 pyftdi reads them, for example `blaster:1:1a`; the list shows that form for them.
 A Blaster held by another program, such as Quartus' `jtagd`, cannot be opened, and

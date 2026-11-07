@@ -418,11 +418,12 @@ or REST check whose host is missing is skipped, not failed.
 | Variable | Used by | When unset |
 |---|---|---|
 | `DEPLOY_HOST` | `./build` only (`build-tool` takes `--deploy-host`) | The FTP step of `./build` is skipped and reported as `SKIPPED` |
-| `DEPLOY_PATH` | `./build` only (`build-tool` takes `--deploy-path`) | `build-tool`'s default for the target: `/Usb1/firmware/u64/custom/` (u64), `/USB1/Firmware/custom/` (u64ii). Neither has been confirmed against a device's FTP root; check with `curl ftp://<device>/ --list-only` |
+| `DEPLOY_PATH` | `./build` only (`build-tool` takes `--deploy-path`) | `build-tool`'s default for the target: `/Usb1/firmware/u64/custom/` (u64), `/USB1/Firmware/custom/` (u64ii). The volume name depends on the USB slot that holds the stick (`USB2` for the second slot), so check with `curl ftp://<device>/ --list-only` |
 | `BUILD_TOOL_TOOLS_DIR` | `build-tool` (`--build-tools-dir`) | Nothing is mounted: builds use the toolchains in the Docker image, as upstream CI does |
 | `U64_VERIFY_HOST` | REST check after a u64 deploy | Skipped with a warning |
 | `U64II_VERIFY_HOST` | REST check after a u64ii deploy | Skipped with a warning |
 | `U64II_JTAG_URL` | C64 Ultimate JTAG cable: an FT232H URL, or `blaster` | `ftdi://ftdi:232h/1` |
+| `U64II_JTAG_LOCK_NAME` | Device lock that `u64ii_jtag.py` takes; `u64` for a USB-Blaster on the Ultimate 64 | `c64u` |
 | `INTEL_FPGA_ROOT` | Ultimate 64 JTAG deploy and monitor | Searched under `~/intelFPGA_lite`, `~/altera_lite`, `/opt/...` |
 
 ```bash
@@ -447,6 +448,12 @@ exists. To upload such a file on purpose, name it:
 ```
 
 A failed FTP upload makes `build-tool` exit with status 2.
+
+The default upload directory starts with the USB volume `/Usb1/` (u64) or `/USB1/` (u64ii).
+The volume name follows the USB slot that holds the stick, so a stick in the second slot
+appears as `USB2` (seen on an Ultimate 64 on the bench) and the default path does not exist.
+List the volumes with `curl ftp://<device>/ --list-only`, then pass the real directory with
+`--deploy-path /USB2/firmware/u64/custom/`, or set `DEPLOY_PATH` for `./build`.
 
 There are no credentials to set. The Ultimate's FTP server accepts anonymous logins.
 
