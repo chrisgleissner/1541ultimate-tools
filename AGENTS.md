@@ -42,6 +42,9 @@ reference; `tooling/c64u_modes/README.md` describes plugins.
 - A power cycle needs `--allow-power-cycle`. The outlet must be listed by `powerctl` under exactly the configured
   alias and id, and must not be in the `deny_outlets` list of the configuration (the code has no built-in names). The tool then powers off through REST first. Pass the flag only when
   the current task authorizes a restart of the board.
+- `reload`, `flash:<name>` and `snapshot` wait up to 60 s (`--reload-wait S` or `[board] reload_wait`, 0 turns it off)
+  for the board's REST and exit 1 when it stays silent. With `--allow-power-cycle` they then power-cycle the board
+  under the rules above.
 - Never test the power-cycle guards by actually cycling power. Use `--dry-run` and the unit tests, which replace the
   board with a fake.
 - Run the host tests after any change to `tooling/c64u_mode.py` or the plugin interface:

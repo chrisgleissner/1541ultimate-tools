@@ -120,6 +120,7 @@ GET_RETRY_SECONDS = 0.5
 MENU_CLOSE_ATTEMPTS = 12
 FILESYSTEM_ROOT_STEPS = 15
 SELECT_ROW_STEPS = 48
+SCROLL_ROW_STEPS = 200
 
 EXIT_OK = 0
 EXIT_ABORTED_SAFE = 1
@@ -334,13 +335,40 @@ def contains(needle):
     return lambda row: needle.upper() in row.upper()
 
 
+def same_screen(first, second):
+    return first.chars == second.chars and first.colors == second.colors
+
+
+def find_row(menu, match, label, screen, row_range):
+    """The screen and row index of the first row that `match` accepts, scrolling when it is not on screen.
+
+    A directory can hold more entries than the listing window shows. The cursor is moved down until the
+    screen stops changing (the end of the list), then up until it stops changing (the start of the list).
+    The cursor ends up wherever the search stopped; select_row moves it from there."""
+    for key in (KEY_DOWN, KEY_UP):
+        steps = 0
+        while True:
+            target = next((r for r in range(*row_range) if match(screen.rows[r])), None)
+            if target is not None:
+                return screen, target
+            if steps == SCROLL_ROW_STEPS:
+                break
+            menu.tap(key)
+            time.sleep(NAV_SETTLE_SECONDS)
+            following = menu.screen()
+            if same_screen(following, screen):
+                break
+            screen, steps = following, steps + 1
+    raise Failure(f"{label!r} not found in the listing; screen:\n{screen.text}")
+
+
 def select_row(menu, match, label, min_col=0, row_range=LISTING_ROWS, max_steps=SELECT_ROW_STEPS):
-    """Move the cursor onto the first row that `match` accepts, one key at a time, and confirm it."""
+    """Move the cursor onto the first row that `match` accepts, one key at a time, and confirm it.
+
+    A row outside the visible window is searched for by scrolling the listing."""
     screen = menu.screen()
     for _ in range(max_steps):
-        target = next((r for r in range(*row_range) if match(screen.rows[r])), None)
-        if target is None:
-            raise Failure(f"{label!r} not found in the listing; screen:\n{screen.text}")
+        screen, target = find_row(menu, match, label, screen, row_range)
         current = screen.selected_row(min_col, row_range)
         if current == target:
             log(f"Confirmed selection on {screen.rows[current]!r}")
@@ -531,13 +559,26 @@ class Report:
 
 
 @contextlib.contextmanager
-def phase(report, state, what):
-    """Run one step. A Failure before the flash starts is a safe stop."""
+def phase(report, state, what, menu=None):
+    """Run one step. A Failure before the flash starts is a safe stop.
+
+    With `menu`, the menu is closed again on a Failure, so that the abort does not leave it open on the
+    cartridge."""
     report.set_state(state)
     try:
         yield
     except Failure as exc:
+        if menu is not None:
+            close_after_failure(menu)
         raise Abort(f"{what}: {exc}") from exc
+
+
+def close_after_failure(menu):
+    log("Closing the menu after the failure")
+    try:
+        menu.close_from_anywhere()
+    except Failure as exc:
+        log(f"Could not close the menu: {exc}")
 
 
 def execute(args, report):
@@ -591,7 +632,7 @@ def execute(args, report):
 
     # ---- OPEN_MENU ---------------------------------------------------------
     menu = Menu(cartridge, host)
-    with phase(report, "OPEN_MENU", "could not open the U2+L menu"):
+    with phase(report, "OPEN_MENU", "could not open the U2+L menu", menu):
         if cartridge.menu_screen() is not None:
             log(f"Closing the menu that is open on {args.host} to start from a known state")
             menu.close_from_anywhere()
@@ -599,7 +640,7 @@ def execute(args, report):
         report.note("OPEN_MENU", menu.wait_marker(U2L_MENU_MARKER).text)
 
     # ---- NAVIGATE_TO_FILE ----------------------------------------------------
-    with phase(report, "NAVIGATE_TO_FILE", f"navigation to {name} failed"):
+    with phase(report, "NAVIGATE_TO_FILE", f"navigation to {name} failed", menu):
         segments = dest_root.strip("/").split("/") + [branch, date, git_id]
         screen = go_to_filesystem_root(menu, segments[0])
         assert_overlay(screen)
@@ -616,7 +657,7 @@ def execute(args, report):
         report.note("file selected", screen.text)
 
     # ---- CONFIRM_UPDATE_ACTION -------------------------------------------------
-    with phase(report, "CONFIRM_UPDATE_ACTION", f"could not open the '{TXT_RUN_UPDATE}' context action"):
+    with phase(report, "CONFIRM_UPDATE_ACTION", f"could not open the '{TXT_RUN_UPDATE}' context action", menu):
         menu.tap(KEY_RETURN)
         time.sleep(ENTER_SETTLE_SECONDS)
         screen = menu.screen()
