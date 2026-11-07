@@ -434,7 +434,7 @@ Or per invocation:
 
 ```bash
 ./build-tool --deploy-only -d u64 --deploy-host my-u64
-BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii -d u64ii --deploy-host 192.168.1.64 --verify-host 192.168.1.64
+BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii -d u64ii --deploy-host c64u.local --verify-host c64u.local
 ```
 
 `--deploy-only` needs no Docker. It uploads `update_<commit>.<ext>` of the commit at

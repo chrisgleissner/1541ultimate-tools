@@ -321,6 +321,10 @@ tail -F mon/events.log | grep -E ' (ALERT|WARN) '
 python3 tooling/c64u_monitor.py --stop --out mon
 ```
 
+`<host>` is the address or name of the Ultimate, for example `c64u.local`. The monitor
+has no default host: without the argument it uses `U64II_VERIFY_HOST`, and stops with
+an error when that is not set either. `--stop` needs no host.
+
 - **video**: the VIC stream, frame rate, packet loss, an all-black picture; the latest
   frame is saved as `mon/latest.png`. The stream goes to its own multicast group,
   `239.0.1.65:11064`. Unicast does not start on a machine with both Ethernet and WiFi

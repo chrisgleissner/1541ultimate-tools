@@ -341,7 +341,9 @@ class ConsoleWatch(threading.Thread):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("host", nargs="?", default=os.environ.get("U64II_VERIFY_HOST", "c64u"))
+    parser.add_argument("host", nargs="?", default=os.environ.get("U64II_VERIFY_HOST") or None,
+                        help="address or name of the Ultimate (default: $U64II_VERIFY_HOST); required, "
+                             "except with --stop")
     parser.add_argument("--out", default="scratch/c64u-monitor")
     parser.add_argument("--local-ip", default=None, help="interface that joins the group")
     parser.add_argument("--group", default="239.0.1.65", help="multicast group of the stream")
@@ -355,6 +357,8 @@ def main(argv=None) -> int:
     parser.add_argument("--url", default=os.environ.get("U64II_JTAG_URL", "ftdi://ftdi:232h/1"))
     parser.add_argument("--frequency", type=float, default=3e6)
     args = parser.parse_args(argv)
+    if not args.host and not args.stop:
+        parser.error("no host: give the Ultimate's address as HOST, or set U64II_VERIFY_HOST")
     pidfile = os.path.join(args.out, "monitor.pid")
     if args.stop:
         try:
