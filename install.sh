@@ -11,7 +11,7 @@
 # never offers them for a commit. It also installs the agent guide as
 # CHECKOUT/AGENTS.md and CHECKOUT/CLAUDE.md, and the guide's procedures in
 # CHECKOUT/tooling/docs/agents/. Nothing else from this repository is copied:
-# not the other documentation, the logo, the tests, vivado/ or patches/.
+# not the other documentation, the logo, the tests or vivado/.
 #
 # Running it again, for example with a newer release, overwrites the installed
 # files and adds no duplicate exclude entries. Other files in tooling/ are left
