@@ -104,6 +104,18 @@ class Press(unittest.TestCase):
         self.assertIn("press was not acknowledged", self.err.getvalue())
         self.assertEqual(self.out.getvalue(), "")
 
+    def test_missing_package_is_a_message_not_a_traceback(self):
+        for missing in ("bleak", "switchbot"):
+            with self.subTest(missing=missing):
+                self.err.seek(0)
+                self.err.truncate()
+                with mock.patch.dict(sys.modules, {missing: None}):    # None: the import raises ImportError
+                    self.assertEqual(self.main("--mac", MAC), 5)
+                self.assertIn(f"the Python package {missing} is missing", self.err.getvalue())
+                self.assertIn("pip install PySwitchbot bleak", self.err.getvalue())
+                self.assertNotIn("Traceback", self.err.getvalue())
+                self.assertEqual(self.bt.scans, [])
+
     def test_mac_is_required(self):
         with self.assertRaises(SystemExit) as exit:
             self.main()

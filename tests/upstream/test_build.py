@@ -310,6 +310,29 @@ class Unwinder(unittest.TestCase):
         self.assertGreater(checked, 1000)
         self.assertEqual(missed, [], f"{len(missed)} of {checked} functions")
 
+    def test_no_return_is_reached_with_the_frame_allocated(self):
+        # The unwinder follows the control flow to tell whether the frame exists at a pc. In
+        # compiled code every `ret` comes after the epilogue released the frame, or on a path
+        # that never allocated one. A `ret` reached with the frame allocated means the flow
+        # analysis mis-read the disassembly.
+        checked, wrong = 0, []
+        for name, instructions in self.functions.items():
+            if NO_C_FRAME.match(name):
+                continue
+            size, alloc, saves = self.scan(name)
+            if alloc is None:
+                continue
+            start, end = instructions[0][0], instructions[-1][0] + 4
+            arch = DisassembledArch(instructions)
+            for address, text in instructions:
+                if text.split()[0] == "ret":
+                    checked += 1
+                    frames = {state[0] for state in self.unwind._flow(arch, start, end, address, saves)}
+                    if self.unwind.ALLOCATED in frames:
+                        wrong.append((name, hex(address)))
+        self.assertGreater(checked, 1000)
+        self.assertEqual(wrong[:10], [], f"{len(wrong)} of {checked} returns")
+
     def test_shrink_wrapped_functions(self):
         # Functions that branch before they allocate their frame: the case
         # gdb's own prologue analyser gives up on, and the reason this

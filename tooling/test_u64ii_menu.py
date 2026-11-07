@@ -20,7 +20,6 @@ import sys
 import tempfile
 import threading
 import time
-import traceback
 import unittest
 import warnings
 from unittest import mock
@@ -437,23 +436,26 @@ class MainTest(unittest.TestCase):
             self.assertEqual(self.run_main("c64u", verb)[0], 0)
             self.client.assert_called_once_with("c64u", verb)
 
-    @unittest.expectedFailure
     def test_wait_without_text_prints_usage(self):
-        # Confirmed defect: u64ii_menu.py:228 indexes args[0] unchecked, so
-        # `HOST wait` with no TEXT raises IndexError instead of printing usage.
-        # Only that IndexError or a wrong result is the expected failure. Any
-        # other exception ends the test normally, which unittest reports as an
-        # unexpected success and so fails the run.
-        try:
-            rc, out, _ = self.run_main("c64u", "wait")
-        except IndexError:
-            raise
-        except Exception:                                   # noqa: BLE001
-            traceback.print_exc()
-            return
+        rc, out, _ = self.run_main("c64u", "wait")
         self.assertEqual(rc, 2)
         self.assertEqual(out, menu.__doc__ + "\n")
         self.client.assert_not_called()
+
+    def test_wait_with_a_bad_timeout_or_extra_arguments_prints_usage(self):
+        for args in (("Done!", "soon"), ("Done!", "-1"), ("Done!", "nan-ish"), ("Done!", "5", "extra")):
+            with self.subTest(args=args):
+                rc, out, _ = self.run_main("c64u", "wait", *args)
+                self.assertEqual(rc, 2)
+                self.assertEqual(out, menu.__doc__ + "\n")
+        self.client.assert_not_called()
+
+    def test_wait_accepts_a_zero_and_a_fractional_timeout(self):
+        for timeout in ("0", "0.5"):
+            self.client.reset_mock()
+            self.client.return_value = "Main menu\n"
+            self.assertEqual(self.run_main("c64u", "wait", "Main", timeout)[0], 0)
+            self.client.assert_called_once_with("c64u", "wait", "Main", timeout)
 
     def test_script_entry_point_exits_with_the_status(self):
         out = io.StringIO()

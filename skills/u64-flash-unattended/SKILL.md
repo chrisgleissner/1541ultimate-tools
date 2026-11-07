@@ -5,7 +5,7 @@ description: Flash firmware onto an Ultimate 64 Elite (MK1, Nios II) without any
 
 # Flash an Ultimate 64 Elite unattended
 
-`tooling/flash_u64.py` does the whole flow. How it works, the answer table and the pitfalls: https://github.com/chrisgleissner/1541ultimate-tools/blob/{{TOOLS_REF}}/docs/u64-unattended-flash.md. Flashing is persistent. Do it only when the task asks, on a board nobody else is using. The tool takes the u64 device lock itself; never delete or bypass it.
+`tooling/flash_u64.py` does the whole flow. How it works, the answer table and the pitfalls: https://github.com/chrisgleissner/1541ultimate-tools/blob/{{TOOLS_REF}}/docs/u64-unattended-flash.md. Flashing is persistent. Do it only when the task asks, on a board nobody else is using. The tool takes the u64 device lock itself; never delete or bypass it. To keep other commands away from the adapter between the build and the flash, run it as `python3 tooling/with_device_locks.py u64 -- python3 tooling/flash_u64.py ...`.
 
 ## Rules
 
@@ -18,7 +18,7 @@ description: Flash firmware onto an Ultimate 64 Elite (MK1, Nios II) without any
 
 ## Order of steps
 
-1. Get the `.u64` image and an updater ELF of the same commit. A CI package holds only the `.u64`, so build that commit locally for the symbols: `BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool --repo-dir <worktree> --no-submodule-update u64`. The ELF is `target/u64/nios2/updater/result/update.elf`. For a local build, `update.app` in the same directory is the image.
+1. Get the `.u64` image and an updater ELF of the same commit. A CI package holds only the `.u64`, so build that commit locally for the symbols: `BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool --repo-dir <worktree> --no-submodule-update --build-tools-dir <dir> u64`. The `u64` target needs Quartus and Nios II from that directory (or `BUILD_TOOL_TOOLS_DIR`); `$HOME` is not mounted. The ELF is `target/u64/nios2/updater/result/update.elf`. For a local build, `update.app` in the same directory is the image.
 2. Check the board answers on `$U64_HOST` (`/v1/info`), a USB-Blaster is visible to `jtagconfig`, and nothing listens on gdb port 2342.
 3. Run in the background and watch the log. The JTAG load alone takes about 160 s:
    ```bash

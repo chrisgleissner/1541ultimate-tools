@@ -29,21 +29,28 @@ Modes from plugins: every *.py in tooling/c64u_modes/ and in the directories of 
 Configuration: ~/.config/c64u-mode/config.ini
 
     [board]
-    host = 192.168.1.64          ; REST/FTP address of the board
+    host = c64u.local            ; REST/FTP address of the board (or set C64U_HOST)
     outlet = C64U                ; exact alias of the smart outlet that powers ONLY this board (powerctl)
     outlet_id = 8022AC...        ; optional: its powerctl device id; a different device under that alias is refused
-    deny_outlets = Desk, Router  ; aliases never switched (added to a built-in floor that cannot be removed)
+    deny_outlets = Desk, Router  ; aliases never switched, also when 'outlet' is a prefix of one of them. The list
+                                 ; is yours: nothing is denied unless you list it. Name the outlets of every other
+                                 ; machine on the same smart plugs.
+    cable = ft232                ; optional: openFPGALoader cable (-c); default ft232, the FT232H
+    fpga_part = xc7a50tfgg484    ; optional: openFPGALoader --fpga-part; default xc7a50tfgg484 (C64 Ultimate)
     [modes]
     stock = flash:stock          ; short names for launchers and hotkeys
     [hotkeys]
     stock = Meta+Alt+1
 
-Device lock: every command that touches the board holds the c64u lock (the flock u64ii_jtag.py and
-with-device-locks use) for its whole run and writes 'pid=<pid> cmd=...' into it. Held by someone else: the
-command refuses (with a desktop notification), or waits with --wait. Held by an ancestor process: it runs.
+Device lock: every command that touches the board holds the c64u lock ($DEVICE_LOCK_DIR/c64u.lock, the flock
+u64ii_jtag.py and tooling/with_device_locks.py use; the older C64U_JTAG_LOCK names the file when DEVICE_LOCK_DIR is
+not set) for its whole run and writes 'pid=<pid> ...' into it. Held by someone else: the command refuses (with a
+desktop notification), or waits with --wait. Held by an ancestor process, for example under
+'with_device_locks.py c64u -- c64u-mode ...': it runs.
 
-Power cycles: only with --allow-power-cycle (desktop launchers pass it: pressing one is the consent). The outlet
-must be listed by powerctl under exactly the configured alias (and id), and must not be denied. With the Ultimate
+Power cycles: only with --allow-power-cycle (desktop launchers pass it: pressing one is the consent). No outlet is
+switched unless [board] outlet names it: it must be listed by powerctl under exactly that alias (and id), and must
+not be on deny_outlets. With the Ultimate
 REST up: 'Power On After Power Loss' must read On, then a REST power-off, then the cut once the board is silent.
 Without it: the setting must have been seen On within 30 days (check-power), else the cut is refused.
 
@@ -69,16 +76,27 @@ import time
 import urllib.error
 import urllib.request
 
+import device_lock
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 # plugins import ModeError from "c64u_mode"; when this file runs as a script that must be this module, not a copy
 sys.modules.setdefault("c64u_mode", sys.modules[__name__])
 CONFIG = os.path.expanduser(os.environ.get("C64U_MODE_CONFIG", "~/.config/c64u-mode/config.ini"))
 DATA = os.path.expanduser(os.environ.get("C64U_MODE_DATA", "~/.local/share/c64u-mode"))
-LOCK = os.environ.get("C64U_JTAG_LOCK", "/tmp/1541ultimate-device-locks/c64u.lock")
+# DEVICE_LOCK_DIR is the setting every tool honours; C64U_JTAG_LOCK, the full path of the lock file, is the older
+# name of this tool and applies only when DEVICE_LOCK_DIR is not set.
+LOCK = (device_lock.lock_path("c64u") if os.environ.get(device_lock.LOCK_DIR_ENV)
+        else os.environ.get("C64U_JTAG_LOCK") or device_lock.lock_path("c64u"))
 FLASH_SIZE = 16 * 1024 * 1024
 CODE_SIZE = 4 * 1024 * 1024        # bitstream slot and application slot; the flash drive and the config follow
-FPGA_PART = "xc7a50tfgg484"
-DENY_FLOOR = {"mickey", "c64"}     # outlets that power other machines; never switched (user rule 2026-10-08)
+DEFAULT_CABLE = "ft232"            # openFPGALoader -c; the FT232H of the C64 Ultimate JTAG setup
+DEFAULT_FPGA_PART = "xc7a50tfgg484"  # openFPGALoader --fpga-part; the C64 Ultimate's XC7A50T
+# Install hints for the external commands this tool runs, shown when one is missing.
+INSTALL_HINTS = {
+    "openFPGALoader": "install openFPGALoader (https://github.com/trabucayre/openFPGALoader), "
+                      "or your distribution's package of it",
+    "powerctl": "install powerctl (https://github.com/chrisgleissner/powerctl)",
+}
 POWER_SETTING_MAX_AGE = 30 * 86400
 
 
@@ -92,20 +110,10 @@ def log(msg: str) -> None:
 
 # ---- the device lock -----------------------------------------------------------------------------------------------
 
-def _ancestors() -> set:
-    pids, pid = set(), os.getppid()
-    while pid > 1 and pid not in pids:
-        pids.add(pid)
-        try:
-            with open(f"/proc/{pid}/stat") as handle:
-                pid = int(handle.read().rsplit(")", 1)[1].split()[1])
-        except (OSError, ValueError, IndexError):
-            break
-    return pids
-
-
 class DeviceLock:
-    """The c64u flock for a whole command. wait 0: refuse at once when someone else holds it."""
+    """The c64u lock for a whole command. wait 0: refuse at once when someone else holds it.
+
+    A lock held by an ancestor process (with_device_locks.py, flock(1)) covers the command."""
 
     def __init__(self, what: str, wait: float = 0.0, path: str | None = None):
         self.what, self.wait, self.path = what, wait, path or LOCK
@@ -114,38 +122,16 @@ class DeviceLock:
     def __enter__(self) -> "DeviceLock":
         if os.environ.get("C64U_MODE_LOCK") == "off":
             return self
-        import fcntl
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        handle = open(self.path, "a+")
-        deadline = time.monotonic() + self.wait
-        while True:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                handle.seek(0)
-                holder = handle.read().strip()
-                if any(f"pid={pid} " in holder + " " for pid in _ancestors()):
-                    handle.close()
-                    return self
-                if time.monotonic() >= deadline:
-                    handle.close()
-                    raise ModeError(f"the C64U is in use ({holder or 'lock held'}); nothing was changed. "
-                                    "Try again later, or pass --wait SECONDS")
-                time.sleep(0.5)
-        handle.seek(0)
-        handle.truncate()
-        handle.write(f"pid={os.getpid()} cmd=c64u-mode {self.what} since={_dt.datetime.now().isoformat(timespec='seconds')}\n")
-        handle.flush()
-        self.handle = handle
+        try:
+            self.handle = device_lock.acquire(self.path, self.wait, "c64u", f"c64u-mode {self.what}")
+        except device_lock.Busy as busy:
+            raise ModeError(f"the C64U is in use ({busy.holder or 'lock held'}); nothing was changed. "
+                            "Try again later, or pass --wait SECONDS")
         return self
 
     def __exit__(self, *exc) -> None:
-        if self.handle:
-            self.handle.seek(0)
-            self.handle.truncate()
-            self.handle.close()
-            self.handle = None
+        device_lock.release(self.handle)
+        self.handle = None
 
 
 # ---- configuration ------------------------------------------------------------------------------------------------
@@ -209,19 +195,27 @@ class Board:
         log(("would run: " if self.dry_run and not always else "run: ") + shlex.join(argv))
         if self.dry_run and not always:
             return subprocess.CompletedProcess(argv, 0, "", "")
-        r = self._run(argv, text=True, capture_output=capture)
+        try:
+            r = self._run(argv, text=True, capture_output=capture)
+        except FileNotFoundError:
+            hint = INSTALL_HINTS.get(os.path.basename(argv[0]), "check that it is installed and on PATH")
+            raise ModeError(f"{argv[0]}: command not found; {hint}") from None
         if check and r.returncode != 0:
             raise ModeError(f"{argv[0]} failed with exit code {r.returncode}")
         return r
 
     def ofl(self, *args: str, check: bool = True):
-        return self.run(["openFPGALoader", "-c", "ft232", "--fpga-part", FPGA_PART, *args], check=check)
+        board = self.cfg["board"]
+        cable = board.get("cable", "").strip() or DEFAULT_CABLE
+        part = board.get("fpga_part", "").strip() or DEFAULT_FPGA_PART
+        return self.run(["openFPGALoader", "-c", cable, "--fpga-part", part, *args], check=check)
 
     def reload(self):
         self.ofl("-r")
 
     def flash_read(self, dest: str):
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if not self.dry_run:          # a dry run must leave no directory behind: it would show up as an image name
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
         self.ofl("--dump-flash", "--file-size", str(FLASH_SIZE), "--offset", "0", dest)
         if not self.dry_run and os.path.getsize(dest) != FLASH_SIZE:
             raise ModeError(f"{dest}: read {os.path.getsize(dest)} bytes, not {FLASH_SIZE}")
@@ -276,12 +270,15 @@ class Board:
                   "--wait-host", self.host, "--wait-port", str(wait_port), "--wait-timeout", "180"])
 
     def check_outlet(self) -> str:
-        """The configured outlet, after checking it against the deny floor and powerctl's registry."""
+        """The configured outlet, after checking it against the deny list and powerctl's registry.
+
+        Nothing is switched unless [board] outlet names it, powerctl lists exactly one outlet under exactly that
+        alias, and (when configured) the device id matches. The deny list comes from the configuration only."""
         board = self.cfg["board"]
         outlet = board.get("outlet", "").strip()
         if not outlet:
             raise ModeError("no outlet configured ([board] outlet): power the board off and on yourself")
-        deny = DENY_FLOOR | {d.strip().lower() for d in board.get("deny_outlets", "").split(",") if d.strip()}
+        deny = {d.strip().lower() for d in board.get("deny_outlets", "").split(",") if d.strip()}
         low = outlet.lower()
         # equal to a denied alias, or a prefix of one (powerctl resolves a unique alias prefix)
         if any(d == low or d.startswith(low) for d in deny):
@@ -376,8 +373,10 @@ class FlashStore:
         return os.path.join(self.root, name, _dt.datetime.now().strftime("%Y%m%d-%H%M%S") + ".bin")
 
     def names(self) -> list[str]:
-        return sorted(d for d in os.listdir(self.root) if os.path.isdir(os.path.join(self.root, d))) \
-            if os.path.isdir(self.root) else []
+        """The names that have at least one image; an empty directory is not an image name."""
+        if not os.path.isdir(self.root):
+            return []
+        return sorted(d for d in os.listdir(self.root) if self.images(d))
 
     def code_hash(self, image: str) -> str:
         """SHA-256 of the image's first 4 MiB, cached in <image>.code."""

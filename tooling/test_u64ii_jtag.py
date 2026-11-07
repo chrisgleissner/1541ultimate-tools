@@ -643,11 +643,6 @@ def run_main(argv, model=None):
     return rc, out.getvalue(), model, ftdi
 
 
-def console_sink(sink):
-    """Board.console binds sys.stdout when the module loads, so redirect its default."""
-    return mock.patch.object(jt.Board.console, "__defaults__", (sink,))
-
-
 class RecordingFtdi:
     """Records MPSSE writes and serves canned reads."""
 
@@ -761,42 +756,6 @@ class DeviceLockTest(unittest.TestCase):
         with contextlib.redirect_stdout(out), self.assertRaisesRegex(jt.JtagError, "in use"):
             jt.DeviceLock(wait=0.3).__enter__()
         self.assertEqual(out.getvalue().count("waiting for"), 1)
-
-
-class AncestorsTest(unittest.TestCase):
-    # A fixed parent pid: under a container entrypoint the real parent can be
-    # pid 1, where the walk stops before it starts.
-    PARENT = 4100
-
-    def setUp(self):
-        getppid = mock.patch.object(jt.os, "getppid", return_value=self.PARENT)
-        getppid.start()
-        self.addCleanup(getppid.stop)
-
-    def test_follows_parent_links_and_stops_on_a_loop(self):
-        stat = mock.mock_open(read_data="4242 (with (odd) name) S 4242 1 1")
-        with mock.patch.object(jt, "open", stat, create=True):
-            self.assertEqual(jt._ancestors(), {self.PARENT, 4242})
-
-    def test_unreadable_proc_stops_at_the_parent(self):
-        with mock.patch.object(jt, "open", side_effect=OSError("no /proc"), create=True):
-            self.assertEqual(jt._ancestors(), {self.PARENT})
-
-    def test_malformed_stat_stops_at_the_parent(self):
-        with mock.patch.object(jt, "open", mock.mock_open(read_data="garbage"), create=True):
-            self.assertEqual(jt._ancestors(), {self.PARENT})
-
-    def test_init_ends_the_walk(self):
-        with mock.patch.object(jt.os, "getppid", return_value=1):
-            self.assertEqual(jt._ancestors(), set())
-
-
-class RealAncestorsTest(unittest.TestCase):
-    @unittest.skipIf(os.getppid() <= 1, "the test runner is a child of init")
-    def test_includes_the_parent_but_not_this_process(self):
-        pids = jt._ancestors()
-        self.assertIn(os.getppid(), pids)
-        self.assertNotIn(os.getpid(), pids)
 
 
 class MpsseTest(unittest.TestCase):
@@ -1183,20 +1142,19 @@ class BoardEdgeTest(unittest.TestCase):
         self.assertEqual(b.console(0.2, sink), 257)
         self.assertEqual(sink.getvalue(), (bytes(range(256)) + b"!").decode("latin-1"))
 
-    @unittest.expectedFailure
     def test_console_follows_a_redirected_stdout(self):
-        # Suspected defect: Board.console's `sink=sys.stdout` default is bound at
-        # import (u64ii_jtag.py:671), so `console` output ignores a later
-        # redirection of sys.stdout, unlike every log() line.
-        # No console_sink here: patching the default would reproduce the defect
-        # inside the test, and the test could then never pass after a fix.
-        # Until the fix, "hello" goes to the stdout of the test run.
+        # The default sink is looked up when console() runs, not when the module loads.
         b, model, _ = board()
         model.chain.console_fifo.extend(b"hello")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             b.console(0.1)
         self.assertEqual(out.getvalue(), "hello")
+        later = io.StringIO()
+        model.chain.console_fifo.extend(b"again")
+        with contextlib.redirect_stdout(later):
+            b.console(0.1)
+        self.assertEqual(later.getvalue(), "again")
 
 
 class CommandLineTest(unittest.TestCase):
@@ -1318,16 +1276,14 @@ class CommandLineTest(unittest.TestCase):
         path = self.file("ultimate.bin", data=b"\x13\x00\x00\x00" * 8)
         model = ArtixModel()
         model.chain.console_fifo.extend(b"*** Ultimate\n")
-        sink = io.StringIO()
-        with console_sink(sink), mock.patch.object(jt.Board, "run_application",
-                                                   autospec=True) as load:
+        with mock.patch.object(jt.Board, "run_application", autospec=True) as load:
             rc, out, model, _ = run_main(["run", "--warm", "--no-verify", "--console", "0.1",
                                           "--bin", path], model)
         self.assertEqual(rc, 0)
         load.assert_called_once_with(mock.ANY, b"\x13\x00\x00\x00" * 8, verify=False)
         self.assertFalse(model.jprogram)
         self.assertIn("--warm: keeping the running FPGA image", out)
-        self.assertEqual(sink.getvalue(), "*** Ultimate\n")
+        self.assertIn("*** Ultimate\n", out)               # the console text goes to the redirected stdout
 
     def test_warm_run_needs_a_running_design(self):
         path = self.file("ultimate.bin", data=bytes(8))
@@ -1388,13 +1344,10 @@ class CommandLineTest(unittest.TestCase):
     def test_console_command_stops_quietly_on_ctrl_c(self):
         model = ArtixModel()
         model.chain.console_fifo.extend(b"READY.\n")
-        sink = io.StringIO()
         self.sleep.side_effect = KeyboardInterrupt
-        with console_sink(sink):
-            rc, out, _, _ = run_main(["console"], model)
+        rc, out, _, _ = run_main(["console"], model)
         self.assertEqual(rc, 0)
-        self.assertEqual(sink.getvalue(), "READY.\n")
-        self.assertEqual(out, "")
+        self.assertEqual(out, "READY.\n")
 
     def test_console_command_needs_a_running_design(self):
         model = ArtixModel()

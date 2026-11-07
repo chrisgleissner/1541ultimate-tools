@@ -6,7 +6,6 @@ import argparse
 import contextlib
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-import fcntl
 import hashlib
 import importlib.metadata
 import json
@@ -17,6 +16,7 @@ import statistics
 import sys
 import time
 
+import device_lock
 import u64ii_jtag as jt
 
 VERSION = 1
@@ -172,21 +172,24 @@ class SafeTap:
 @contextlib.contextmanager
 def target_lock(profile, adapter):
     # Share the deployed tool's target lock without changing its module global.
-    # DeviceLock handles an ancestor with-device-locks owner on c64u.
+    # DeviceLock handles an ancestor lock holder (with_device_locks.py) on c64u.
     if profile == "c64u":
         if os.environ.get("U64II_JTAG_LOCK") == "off":
             raise PolicyError("verifier refuses disabled device locking")
         with jt.DeviceLock(wait=0):
             yield
         return
-    directory = Path(os.environ.get("DEVICE_LOCK_DIR", "/tmp/1541ultimate-device-locks"))
-    directory.mkdir(parents=True, exist_ok=True)
-    with (directory / f"{profile}.lock").open("a+") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise PolicyError(f"{profile} device lock is busy") from exc
+    # Other profiles use the same lock files as the other tools; a lock held by an
+    # ancestor process covers this run, and a holder line is written while it runs.
+    try:
+        handle = device_lock.acquire(device_lock.lock_path(profile), 0, profile,
+                                     " ".join([os.path.basename(sys.argv[0])] + sys.argv[1:])[:200])
+    except device_lock.Busy as exc:
+        raise PolicyError(f"{profile} device lock is busy") from exc
+    try:
         yield
+    finally:
+        device_lock.release(handle)
 
 
 @contextlib.contextmanager

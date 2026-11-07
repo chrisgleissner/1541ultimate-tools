@@ -76,6 +76,7 @@ BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii # writes update_<commit>.ue2
 | `tooling/u64ii_gdb.sh` | gdb for the running C64 Ultimate application: tasks as threads, backtraces | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/c64u_monitor.py` | Watches a C64 Ultimate's video stream, REST API and console | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/c64u_mode.py` (`c64u-mode`) | Switches a C64 Ultimate or Ultimate 64 Elite II between firmware setups with one command | [C64 Ultimate firmware setups](#c64-ultimate-firmware-setups) |
+| `tooling/with_device_locks.py` | Runs a command while holding named device locks (`c64u`, `u64`); the tools run inside it without waiting for their parent | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/apply_pr.sh` | Makes a throwaway worktree with upstream pull requests applied | `./build-tool --help` |
 | `vivado/install.sh` | Installs AMD Vivado 2024.1 for Artix-7 without interaction | [docs/vivado-install.md](docs/vivado-install.md) |
 
@@ -175,6 +176,8 @@ tool that an older release had and a newer one dropped stays until you delete it
 | FT232H (for example Adafruit) and Python 3 | C64 Ultimate / Ultimate 64 Elite II JTAG; pyftdi is installed into a virtual environment on first use |
 | Adafruit FT232H, Python 3.10+ and `ecpprog` | UII+L ECP5 JTAG backup and deployment; see [programmer setup](docs/u2pl-jtag.md#install-the-programmer) |
 | Lattice Diamond 3.13 with Diamond Base and Synplify licences | Full `u2pl` FPGA synthesis only (see [docs/u2pl-build.md](docs/u2pl-build.md)) |
+| [openFPGALoader](https://github.com/trabucayre/openFPGALoader) | Optional: `c64u-mode` reads and writes the C64 Ultimate flash with it |
+| [powerctl](https://github.com/chrisgleissner/powerctl) | Optional: `c64u-mode` power-cycles the board through a smart outlet, only with `--allow-power-cycle` |
 
 `build-tool` prepares a Docker image `1541u-build:latest` from
 `ghcr.io/gideonz/riscv:latest` the first time it runs.
@@ -364,7 +367,22 @@ bitstream and application from RAM) and `reload` (reconfigure the FPGA from flas
 Configuration is in `~/.config/c64u-mode/config.ini`; stored images are in
 `~/.local/share/c64u-mode/`. Each command that touches the board holds the C64U
 device lock for its whole run. A smart-outlet power cycle only happens with
-`--allow-power-cycle`. Further modes are added as plugins; see
+`--allow-power-cycle`, and only for the outlet that `[board] outlet` names exactly.
+Flash access needs [openFPGALoader](https://github.com/trabucayre/openFPGALoader), a
+power cycle needs [powerctl](https://github.com/chrisgleissner/powerctl). Without them
+the command stops with a message that names the missing program; `status` and `list`
+need neither. A minimal configuration:
+
+```ini
+[board]
+host = c64u.local            ; or set C64U_HOST
+outlet = C64U                ; powerctl alias of the outlet that powers only this board
+deny_outlets = Desk, Router  ; outlets that must never be switched; the code has no built-in list
+cable = ft232                ; optional, openFPGALoader cable (default ft232)
+fpga_part = xc7a50tfgg484    ; optional, openFPGALoader part (default xc7a50tfgg484)
+```
+
+Further modes are added as plugins; see
 [tooling/c64u_modes/README.md](tooling/c64u_modes/README.md). The header comment of
 `tooling/c64u_mode.py` is the full reference.
 
@@ -416,7 +434,7 @@ Or per invocation:
 
 ```bash
 ./build-tool --deploy-only -d u64 --deploy-host my-u64
-BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii -d u64ii --deploy-host 192.168.1.64 --verify-host 192.168.1.64
+BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii -d u64ii --deploy-host c64u.local --verify-host c64u.local
 ```
 
 `--deploy-only` needs no Docker. It uploads `update_<commit>.<ext>` of the commit at

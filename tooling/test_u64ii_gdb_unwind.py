@@ -282,23 +282,27 @@ class UnwinderTest(UnwindTestBase):
             self.assertEqual(self.saved(info), {"pc": 0x6660, "sp": SP}, hex(pc))
             self.assertEqual(int(info.frame_id.sp), SP)
 
-    # Suspected bug, u64ii_gdb_unwind.py line 81: `framed` compares addresses
-    # (alloc < pc), not execution order. The shrink-wrapped early exit at
-    # 0x1030 lies after the allocation but is reached by the branch at 0x1000
-    # without it, so the unwinder adds 48 to sp and reads a stale "ra" from the
-    # stack instead of using the live ra register.
-    @unittest.expectedFailure
     def test_shrink_wrapped_exit_path_after_the_frame_code(self):
+        # 0x1030 lies after the allocation in address order, but the branch at
+        # 0x1000 reaches it without the frame: ra is the live register.
         info = self.unwind(0x1030)
         self.assertEqual(self.saved(info), {"pc": 0x6660, "sp": SP})
 
-    # Same root cause (line 81): at the `ret` after `addi sp,sp,48` the frame
-    # is already released and ra restored, but the unwinder still treats the
-    # function as framed and unwinds through the caller's stack.
-    @unittest.expectedFailure
     def test_after_the_epilogue_released_the_frame(self):
+        # At the `ret` after `addi sp,sp,48` the frame is released and ra restored.
         info = self.unwind(0x1020)
         self.assertEqual(self.saved(info), {"pc": 0x6660, "sp": SP})
+
+    def test_every_pc_of_the_function(self):
+        # (pc, expected caller pc, expected caller sp) from the control flow of LISTING
+        expected = {0x1000: (0x6660, SP), 0x1004: (0x6660, SP), 0x1008: (0x6660, SP + 48),
+                    0x100C: (0x6660, SP + 48), 0x1010: (0x5550, SP + 48), 0x1014: (0x5550, SP + 48),
+                    0x1018: (0x5550, SP + 48), 0x101C: (0x5550, SP + 48), 0x1020: (0x6660, SP),
+                    0x1030: (0x6660, SP)}
+        for pc, (caller_pc, caller_sp) in expected.items():
+            with self.subTest(pc=hex(pc)):
+                saved = self.saved(self.unwind(pc))
+                self.assertEqual((saved["pc"], saved["sp"]), (caller_pc, caller_sp))
 
     def test_leaf_function(self):
         info = self.unwind(0x1004, listing=[(0x1000, "addi a0,a0,1"), (0x1004, "ret")])
@@ -330,6 +334,106 @@ class UnwinderTest(UnwindTestBase):
         self.inferior.memory = memory_with(o44=0x1014, o40=0x7770)
         info = self.unwind(0x1014)
         self.assertEqual(self.saved(info), {"pc": 0x1014, "sp": SP + 48, "fp": 0x7770})
+
+
+class FlowTest(unittest.TestCase):
+    """_flow: the states in which execution reaches a pc."""
+
+    def flow(self, listing, pc, saves=None, end=None):
+        end = end or listing[-1][0] + 4
+        return uw._flow(Arch(listing), listing[0][0], end, pc, saves or {})
+
+    def test_straight_line_with_a_frame(self):
+        listing = [(0x1000, "addi sp,sp,-16"), (0x1004, "sw ra,12(sp)"), (0x1008, "addi sp,sp,16"),
+                   (0x100C, "ret")]
+        saves = {"ra": (12, 0x1004)}
+        self.assertEqual(self.flow(listing, 0x1000, saves), {(uw.NONE, False, False)})
+        self.assertEqual(self.flow(listing, 0x1004, saves), {(uw.ALLOCATED, False, False)})
+        self.assertEqual(self.flow(listing, 0x1008, saves), {(uw.ALLOCATED, True, False)})
+        self.assertEqual(self.flow(listing, 0x100C, saves), {(uw.RELEASED, True, False)})
+
+    def test_deallocation_without_a_frame_is_ignored(self):
+        listing = [(0x1000, "addi sp,sp,16"), (0x1004, "ret")]
+        self.assertEqual(self.flow(listing, 0x1004), {(uw.NONE, False, False)})
+
+    def test_a_second_allocation_keeps_the_state(self):
+        listing = [(0x1000, "addi sp,sp,-16"), (0x1004, "addi sp,sp,-16"), (0x1008, "ret")]
+        self.assertEqual(self.flow(listing, 0x1008), {(uw.ALLOCATED, False, False)})
+
+    def test_conditional_branch_reaches_both_ways(self):
+        listing = [(0x1000, "bnez a0,0x100c"), (0x1004, "addi sp,sp,-16"), (0x1008, "nop"),
+                   (0x100C, "ret")]
+        self.assertEqual(self.flow(listing, 0x100C),
+                         {(uw.NONE, False, False), (uw.ALLOCATED, False, False)})
+
+    def test_compressed_branch_and_target_with_a_symbol(self):
+        listing = [(0x1000, "c.beqz a0,0x1008 <fn+8>"), (0x1004, "addi sp,sp,-16"), (0x1008, "ret")]
+        self.assertEqual(self.flow(listing, 0x1008),
+                         {(uw.NONE, False, False), (uw.ALLOCATED, False, False)})
+
+    def test_targets_without_0x_as_objdump_prints_them(self):
+        listing = [(0x1000, "bnez a0,1008 <fn+8>"), (0x1004, "j 100c <fn+12>"), (0x1008, "addi sp,sp,-16"),
+                   (0x100C, "ret")]
+        self.assertEqual(self.flow(listing, 0x100C),
+                         {(uw.NONE, False, False), (uw.ALLOCATED, False, False)})
+
+    def test_unconditional_jumps_do_not_fall_through(self):
+        for jump in ("j 0x1008", "c.j 0x1008", "jal zero,0x1008", "jal x0,0x1008"):
+            with self.subTest(jump=jump):
+                listing = [(0x1000, jump), (0x1004, "addi sp,sp,-16"), (0x1008, "ret")]
+                self.assertEqual(self.flow(listing, 0x1004), set())
+                self.assertEqual(self.flow(listing, 0x1008), {(uw.NONE, False, False)})
+
+    def test_jump_out_of_the_function_ends_the_path(self):
+        listing = [(0x1000, "j 0x2000"), (0x1004, "ret")]
+        self.assertEqual(self.flow(listing, 0x1004), set())
+        listing = [(0x1000, "beqz a0,0x2000"), (0x1004, "ret")]
+        self.assertEqual(self.flow(listing, 0x1004), {(uw.NONE, False, False)})
+
+    def test_returns_and_indirect_jumps_end_the_path(self):
+        for end in ("ret", "jr a5", "c.jr a5", "tail 0x2000", "jalr zero,0(a5)", "jalr x0,0(a5)", "mret"):
+            with self.subTest(end=end):
+                self.assertEqual(self.flow([(0x1000, end), (0x1004, "nop")], 0x1004), set())
+
+    def test_calls_continue_after_the_call(self):
+        for call in ("jal ra,0x2000", "jalr ra,0(a5)", "jalr a5", "c.jalr a5", "nop"):
+            with self.subTest(call=call):
+                self.assertEqual(self.flow([(0x1000, call), (0x1004, "nop")], 0x1004),
+                                 {(uw.NONE, False, False)})
+
+    def test_a_loop_terminates(self):
+        listing = [(0x1000, "addi sp,sp,-16"), (0x1004, "addi a0,a0,-1"), (0x1008, "bnez a0,0x1004"),
+                   (0x100C, "ret")]
+        self.assertEqual(self.flow(listing, 0x100C), {(uw.ALLOCATED, False, False)})
+
+    def test_a_pc_that_is_not_an_instruction_is_never_reached(self):
+        self.assertEqual(self.flow([(0x1000, "ret")], 0x1002), set())
+
+    def test_running_off_the_end_of_the_listing(self):
+        self.assertEqual(self.flow([(0x1000, "nop")], 0x1000), {(uw.NONE, False, False)})
+
+
+class FallbackTest(UnwindTestBase):
+    """When the control flow does not decide, the unwinder compares addresses."""
+
+    def test_unreachable_pc_uses_the_address_order(self):
+        listing = [(0x1000, "addi sp,sp,-48"), (0x1004, "sw ra,44(sp)"), (0x1008, "ret"),
+                   (0x1010, "nop")]                    # nothing jumps to 0x1010
+        info = self.unwind(0x1010, listing=listing)
+        self.assertEqual(self.saved(info), {"pc": 0x5550, "sp": SP + 48})
+
+    def test_paths_that_disagree_use_the_address_order(self):
+        # 0x1010 is reached with and without the frame
+        listing = [(0x1000, "beqz a0,0x1010"), (0x1004, "addi sp,sp,-48"), (0x1008, "sw ra,44(sp)"),
+                   (0x1010, "ret")]
+        info = self.unwind(0x1010, listing=listing)
+        self.assertEqual(self.saved(info), {"pc": 0x5550, "sp": SP + 48})
+
+    def test_merged_paths_in_which_the_frame_is_released_and_not(self):
+        listing = [(0x1000, "addi sp,sp,-16"), (0x1004, "beqz a0,0x100c"), (0x1008, "addi sp,sp,16"),
+                   (0x100C, "ret")]
+        info = self.unwind(0x100C, listing=listing)
+        self.assertEqual(self.saved(info), {"pc": 0x6660, "sp": SP + 16})
 
 
 if __name__ == "__main__":

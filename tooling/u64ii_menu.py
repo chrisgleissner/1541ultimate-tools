@@ -225,7 +225,15 @@ def main(argv: list[str]) -> int:
                 return 2
         out = client(host, "key", *args)
     elif verb == "wait":
-        out = client(host, "wait", args[0], args[1] if len(args) > 1 else "20")
+        timeout = args[1] if len(args) > 1 else "20"
+        try:
+            valid = len(args) in (1, 2) and float(timeout) >= 0
+        except ValueError:
+            valid = False
+        if not valid:                  # the server would die on a missing text or a bad timeout
+            print(__doc__)
+            return 2
+        out = client(host, "wait", args[0], timeout)
     elif verb in ("show", "stop"):
         out = client(host, verb)
     else:

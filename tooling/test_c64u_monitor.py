@@ -95,7 +95,7 @@ class RecordingLog:
 
 
 def make_args(out, **overrides):
-    values = dict(host="c64u", out=out, local_ip="192.168.1.2", group="239.0.1.65",
+    values = dict(host="c64u", out=out, local_ip="192.0.2.2", group="239.0.1.65",
                   video_port=11064, min_fps=45.0, png_every=5.0, rest_every=5.0,
                   console_every=2.0, url="ftdi://ftdi:232h/1", frequency=3e6)
     values.update(overrides)
@@ -249,7 +249,7 @@ class FakeSocketModule:
         return sock
 
     def gethostbyname(self, host):
-        return {"c64u": "192.168.1.148"}[host]
+        return {"c64u": "192.0.2.148"}[host]
 
     def __getattr__(self, name):
         return getattr(socket, name)
@@ -262,7 +262,7 @@ class LocalAddressTest(unittest.TestCase):
             self.assertEqual(mon.local_address_towards("c64u"), "10.0.0.7")
         sock, = fake.created
         self.assertEqual(sock.args, (socket.AF_INET, socket.SOCK_DGRAM))
-        self.assertEqual(sock.connected, ("192.168.1.148", 80))
+        self.assertEqual(sock.connected, ("192.0.2.148", 80))
         self.assertTrue(sock.closed)
 
     def test_closes_the_socket_when_resolution_fails(self):
@@ -1157,12 +1157,27 @@ class MainRunTest(unittest.TestCase):
         self.assertEqual(mon.main(["--out", self.out, "--no-console"]), 0)
         self.assertEqual(self.events()[-1], ["INFO", "monitor", "stopped"])
 
-    def test_default_host_without_environment(self):
+    def test_host_is_required_without_the_environment(self):
+        for env in ({}, {"U64II_VERIFY_HOST": ""}):
+            with self.subTest(env=env), mock.patch.dict(os.environ, env, clear=True), \
+                    contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as caught:
+                mon.main(["--out", self.out, "--no-console"])
+            self.assertEqual(caught.exception.code, 2)
+            self.assertIn("no host: give the Ultimate's address as HOST, or set U64II_VERIFY_HOST", err.getvalue())
+            self.assertEqual(self.created, [])
+            self.assertFalse(os.path.exists(os.path.join(self.out, "monitor.pid")))
+
+    def test_host_argument_wins_over_the_environment_and_url_defaults(self):
         self.on_start = lambda thread: self.stop_event.set()
-        with mock.patch.dict(os.environ, clear=True):
-            mon.main(["--out", self.out, "--no-console"])
-        self.assertEqual(self.created[0].args.host, "c64u")
+        with mock.patch.dict(os.environ, {"U64II_VERIFY_HOST": "from-env"}, clear=True):
+            mon.main(["c64u.local", "--out", self.out, "--no-console"])
+        self.assertEqual(self.created[0].args.host, "c64u.local")
         self.assertEqual(self.created[0].args.url, "ftdi://ftdi:232h/1")
+
+    def test_stop_needs_no_host(self):
+        with mock.patch.dict(os.environ, clear=True), contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(mon.main(["--stop", "--out", self.out]), 1)
+        self.assertIn("no running monitor", out.getvalue())
 
 
 if __name__ == "__main__":

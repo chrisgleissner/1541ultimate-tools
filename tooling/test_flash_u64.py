@@ -12,6 +12,7 @@ toolchain or the shared device lock.
 """
 
 import contextlib
+import fcntl
 import glob
 import io
 import json
@@ -32,6 +33,7 @@ import warnings
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import device_lock  # noqa: E402
 import flash_u64 as fu  # noqa: E402
 
 
@@ -451,7 +453,7 @@ class Bench:
     def note_lock(self):
         with open(self.lock_path, "a+") as handle:
             try:
-                fu.fcntl.flock(handle.fileno(), fu.fcntl.LOCK_EX | fu.fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.lock_held.append(False)
             except BlockingIOError:
                 self.lock_held.append(True)
@@ -861,10 +863,10 @@ class Main(BenchTest):
     def test_lock_in_use(self):
         os.makedirs(os.path.dirname(self.lock_path))
         with open(self.lock_path, "a+") as other:
-            fu.fcntl.flock(other.fileno(), fu.fcntl.LOCK_EX | fu.fcntl.LOCK_NB)
+            fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             other.write("pid=999999 cmd=another-run\n")
             other.flush()
-            with mock.patch.object(fu, "ancestors", return_value={11, 12}):
+            with mock.patch.object(device_lock, "ancestors", return_value={11, 12}):
                 self.assertEqual(self.main(), 1)
         self.assertIn("the u64 is in use", self.log)
         self.assertEqual(self.bench.ran, [])
@@ -1053,20 +1055,20 @@ class DeviceLock(unittest.TestCase):
         self.enterContext(mock.patch.object(fu, "LOCK_PATH", self.path))
         self.enterContext(mock.patch.dict(os.environ))
         os.environ.pop("FLASH_U64_LOCK", None)
-        self.enterContext(mock.patch.object(fu, "ancestors", return_value={11, 12}))
+        self.enterContext(mock.patch.object(device_lock, "ancestors", return_value={11, 12}))
 
     def held_by(self, holder):
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         other = open(self.path, "a+")
         self.addCleanup(other.close)
-        fu.fcntl.flock(other.fileno(), fu.fcntl.LOCK_EX | fu.fcntl.LOCK_NB)
+        fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         other.write(holder)
         other.flush()
 
     def free(self):
         with open(self.path, "a+") as other:
             try:
-                fu.fcntl.flock(other.fileno(), fu.fcntl.LOCK_EX | fu.fcntl.LOCK_NB)
+                fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return True
             except BlockingIOError:
                 return False
@@ -1098,32 +1100,6 @@ class DeviceLock(unittest.TestCase):
         with fu.DeviceLock() as lock:
             self.assertIsNone(lock.handle)
         self.assertFalse(os.path.exists(self.path))
-
-
-class Ancestors(unittest.TestCase):
-    def proc(self, parents):
-        def fake_open(path):
-            pid = int(path.split("/")[2])
-            if pid not in parents:
-                raise FileNotFoundError(path)
-            return io.StringIO(f"{pid} (odd) name) S {parents[pid]} 1 1 0")
-        self.enterContext(mock.patch.object(fu, "open", fake_open, create=True))
-        self.enterContext(mock.patch.object(fu.os, "getppid", return_value=300))
-
-    def test_this_process(self):
-        self.assertIn(os.getppid(), fu.ancestors())
-
-    def test_walk_stops_at_init(self):
-        self.proc({300: 400, 400: 1})
-        self.assertEqual(fu.ancestors(), {300, 400})
-
-    def test_walk_stops_at_a_loop(self):
-        self.proc({300: 400, 400: 300})
-        self.assertEqual(fu.ancestors(), {300, 400})
-
-    def test_walk_stops_at_an_unreadable_process(self):
-        self.proc({300: 400})
-        self.assertEqual(fu.ancestors(), {300, 400})
 
 
 if __name__ == "__main__":

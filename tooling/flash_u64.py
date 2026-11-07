@@ -5,8 +5,8 @@ Runs the U64 updater over JTAG and answers its popups by their text through
 gdb/MI. The updater ends by switching the machine off; it comes back on only
 through the power button, pressed by --power-button-cmd or by a person.
 
-    with-device-locks u64 -- python3 tooling/flash_u64.py \\
-        --host 192.168.1.13 --u64 update.u64 \\
+    python3 tooling/with_device_locks.py u64 -- python3 tooling/flash_u64.py \\
+        --host u64.local --u64 update.u64 \\
         --sym-elf target/u64/nios2/updater/result/update.elf \\
         [--power-button-cmd "python3 tooling/switchbot_press.py --mac AA:BB:CC:DD:EE:FF --hold 0"] \\
         [--expect-commit d5686424f]
@@ -19,7 +19,6 @@ See docs/u64-unattended-flash.md.
 """
 
 import argparse
-import fcntl
 import glob
 import json
 import os
@@ -32,6 +31,8 @@ import sys
 import tempfile
 import time
 import urllib.request
+
+import device_lock
 
 OK, YES, NO = 1, 2, 4  # software/userinterface/ui_elements.h
 NAMES = {OK: "OK", YES: "YES", NO: "NO"}
@@ -56,8 +57,7 @@ SYMBOLS = {
 
 ITU_IRQ_GLOBAL = 0x04000000   # software/system/itu.h, IOBASE 0x04000000
 FPGA_ID = "5CE"               # jtagconfig names the Cyclone V as 5CE(BA4|FA4)
-LOCK_PATH = os.path.join(os.environ.get("DEVICE_LOCK_DIR", "/tmp/1541ultimate-device-locks"),
-                         "u64.lock")
+LOCK_PATH = device_lock.lock_path("u64")
 T0 = time.monotonic()
 
 
@@ -326,41 +326,24 @@ def answer_popups(gdb, addrs, stop):
 # ---------------------------------------------------------------- device
 
 class DeviceLock:
-    """The u64 flock that `with-device-locks u64 -- ...` takes. A lock held by
-    an ancestor (with-device-locks writes its pid into the file) covers us."""
+    """The u64 lock that `tooling/with_device_locks.py u64 -- ...` takes. A lock
+    held by an ancestor (with_device_locks.py, or flock(1)) covers us. Otherwise
+    the lock file carries a holder line while this process holds it."""
 
     def __enter__(self):
+        self.handle = None
         if os.environ.get("FLASH_U64_LOCK") == "off":
-            self.handle = None
             return self
-        os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
-        self.handle = open(LOCK_PATH, "a+")
+        cmd = " ".join([os.path.basename(sys.argv[0])] + sys.argv[1:])[:200]
         try:
-            fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            self.handle.seek(0)
-            holder = self.handle.read()
-            self.handle.close()
-            self.handle = None
-            if not any(f"pid={pid} " in holder for pid in ancestors()):
-                raise FlashError(f"the u64 is in use ({LOCK_PATH}: {holder.strip() or 'held'})")
+            self.handle = device_lock.acquire(LOCK_PATH, 0, "u64", cmd)
+        except device_lock.Busy as busy:
+            raise FlashError(f"the u64 is in use ({LOCK_PATH}: {busy.holder or 'held'})")
         return self
 
     def __exit__(self, *exc):
-        if self.handle:
-            self.handle.close()
-
-
-def ancestors():
-    pids, pid = set(), os.getppid()
-    while pid > 1 and pid not in pids:
-        pids.add(pid)
-        try:
-            with open(f"/proc/{pid}/stat") as handle:
-                pid = int(handle.read().rsplit(")", 1)[1].split()[1])
-        except (OSError, ValueError, IndexError):
-            break
-    return pids
+        device_lock.release(self.handle)
+        self.handle = None
 
 
 def rest_info(host):

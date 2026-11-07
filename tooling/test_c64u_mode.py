@@ -22,7 +22,8 @@ import time
 import unittest
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 import c64u_mode as cm  # noqa: E402
 
 LOG = cm.log  # the real log(); Base patches cm.log
@@ -202,6 +203,20 @@ class SnapshotTest(Base):
         cm.snapshot(b, self.store, "alt")
         self.assertIsNone(self.store.current())
 
+    def test_dry_run_creates_no_image_directory(self):
+        b = self.board(image(2), dry_run=True)
+        cm.snapshot(b, self.store, "alt")
+        self.assertFalse(os.path.exists(os.path.join(self.store.root, "alt")))
+        self.assertEqual(self.store.names(), [])
+
+    def test_name_without_an_image_is_not_a_known_name(self):
+        os.makedirs(os.path.join(self.store.root, "empty"))        # what an older dry run left behind
+        self.save("alt", image(2))
+        self.assertEqual(self.store.names(), ["alt"])
+        b = self.board(image(1))
+        with self.assertRaisesRegex(cm.ModeError, r"no image named 'empty'.*\(known: alt\)"):
+            cm.flash_swap(b, self.store, "empty")
+
     def test_short_read_is_an_error(self):
         b = self.board(image(2))
         self.runner.flash = bytearray(10)
@@ -361,12 +376,36 @@ class OutletTest(Base):
         self.runner = FakeRunner(outlets=outlets)
         return FakeBoard(config(**cfg), run=self.runner)
 
-    def test_deny_floor_and_configured_denials(self):
-        for outlet in ("C64", "c64", "Mickey", "Mic", "Desk"):
+    def test_configured_denials_by_name_and_by_prefix(self):
+        for outlet in ("Desk", "desk", "De", "Rout"):
             with self.subTest(outlet=outlet), self.assertRaisesRegex(cm.ModeError, "deny list"):
-                self.board(outlet=outlet, deny_outlets="Desk").check_outlet()
+                self.board(outlet=outlet, deny_outlets="Desk, Router").check_outlet()
         with self.assertRaisesRegex(cm.ModeError, "no outlet"):
             self.board(outlet="").check_outlet()
+
+    def test_no_outlet_name_is_built_in(self):
+        # the deny list is the user's configuration; the code carries no outlet names
+        for name in ("Mickey", "C64", "Desk"):
+            with self.subTest(name=name):
+                b = self.board(outlets=[{"alias": name, "device_id": "ID"}], outlet=name)
+                self.assertEqual(b.check_outlet(), name)
+                with self.assertRaisesRegex(cm.ModeError, "deny list"):
+                    self.board(outlets=[{"alias": name}], outlet=name, deny_outlets=name).check_outlet()
+        self.assertFalse(hasattr(cm, "DENY_FLOOR"))
+
+    def test_only_the_configured_outlet_is_switched(self):
+        # powerctl knows other outlets, and the board config names none of them
+        others = [{"alias": "Desk", "device_id": "1"}, {"alias": "C64U", "device_id": "2"}]
+        with self.assertRaisesRegex(cm.ModeError, "no outlet"):
+            self.board(outlets=others, outlet="").check_outlet()
+        with self.assertRaisesRegex(cm.ModeError, "0 outlets named exactly 'C64'"):
+            self.board(outlets=others, outlet="C64").check_outlet()        # a prefix is not a name
+        self.assertEqual(self.board(outlets=others).check_outlet(), "C64U")
+        b = self.board(outlets=others, outlet="")
+        b.allow_power_cycle = True
+        with self.assertRaisesRegex(cm.ModeError, "no outlet"):
+            b.power_cycle()
+        self.assertEqual([c for c in self.runner.commands() if c.startswith("powerctl")], [])
 
     def test_registry_must_name_exactly_one_outlet_with_the_right_id(self):
         self.assertEqual(self.board(outlet_id="ID-C64U").check_outlet(), "C64U")
@@ -378,6 +417,55 @@ class OutletTest(Base):
             self.board(outlets=[{"alias": "C64U"}, {"alias": "C64U"}]).check_outlet()
         with self.assertRaisesRegex(cm.ModeError, "JSON"):
             self.board(outlets="not json").check_outlet()
+
+
+class ExternalToolTest(Base):
+    def board(self, **cfg):
+        self.runner = FakeRunner()
+        return cm.Board(config(**cfg), run=self.runner)
+
+    def test_cable_and_part_default(self):
+        self.board().ofl("-r")
+        self.assertEqual(self.runner.calls[-1], ["openFPGALoader", "-c", "ft232", "--fpga-part",
+                                                 "xc7a50tfgg484", "-r"])
+
+    def test_cable_and_part_from_the_configuration(self):
+        self.board(cable="digilent_hs2", fpga_part="xc7a100tfgg484").reload()
+        self.assertEqual(self.runner.calls[-1], ["openFPGALoader", "-c", "digilent_hs2", "--fpga-part",
+                                                 "xc7a100tfgg484", "-r"])
+        self.board(cable=" ", fpga_part="").reload()                  # empty means the default
+        self.assertEqual(self.runner.calls[-1][2:5], ["ft232", "--fpga-part", "xc7a50tfgg484"])
+
+    def missing(self, name):
+        def run(argv, **kw):
+            if argv[0] == name:
+                raise FileNotFoundError(2, "No such file or directory", name)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return cm.Board(config(), run=run)
+
+    def test_missing_openfpgaloader_is_a_message_not_a_traceback(self):
+        with self.assertRaisesRegex(cm.ModeError, "openFPGALoader: command not found; install openFPGALoader"):
+            self.missing("openFPGALoader").reload()
+
+    def test_missing_powerctl_is_a_message_not_a_traceback(self):
+        with self.assertRaisesRegex(cm.ModeError, "powerctl: command not found; install powerctl .*powerctl"):
+            self.missing("powerctl").check_outlet()
+
+    def test_missing_unknown_command(self):
+        with self.assertRaisesRegex(cm.ModeError, "xyz: command not found; check that it is installed"):
+            self.missing("xyz").run(["xyz"])
+
+    def test_main_reports_a_missing_command_and_returns_1(self):
+        notes = []
+
+        def factory(cfg, dry_run=False, allow_power_cycle=False, state=None):
+            board = self.missing("openFPGALoader")
+            board.notify = notes.append
+            return board
+        with mock.patch.object(cm, "load_config", return_value=config()), \
+                mock.patch.object(cm, "FlashStore", return_value=self.store):
+            self.assertEqual(cm.main(["reload"], board_factory=factory), 1)
+        self.assertRegex(notes[-1], "failed: openFPGALoader: command not found")
 
 
 class PowerCycleTest(Base):
@@ -463,7 +551,7 @@ class LockTest(Base):
     def test_takes_writes_and_clears_the_holder(self):
         with cm.DeviceLock("alt"):
             with open(cm.LOCK) as f:
-                self.assertIn(f"pid={os.getpid()} cmd=c64u-mode alt", f.read())
+                self.assertRegex(f.read(), f"^pid={os.getpid()} device=c64u cmd=c64u-mode alt since=")
         with open(cm.LOCK) as f:
             self.assertEqual(f.read(), "")
 
@@ -485,12 +573,25 @@ class LockTest(Base):
             with cm.DeviceLock("x") as lock:
                 self.assertIsNone(lock.handle)
 
-    def test_ancestors(self):
-        self.assertIn(os.getppid(), cm._ancestors())
 
-    def test_ancestors_stop_at_an_unreadable_process(self):
-        with mock.patch("builtins.open", side_effect=OSError("gone")):
-            self.assertEqual(cm._ancestors(), {os.getppid()})
+class LockPathTest(unittest.TestCase):
+    """Which file is the c64u lock: DEVICE_LOCK_DIR first, the older C64U_JTAG_LOCK second, then the default."""
+
+    def lock(self, **env):
+        base = {k: v for k, v in os.environ.items() if k not in ("DEVICE_LOCK_DIR", "C64U_JTAG_LOCK")}
+        out = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {HERE!r}); "
+                              "import c64u_mode; print(c64u_mode.LOCK)"],
+                             capture_output=True, text=True, check=True, env={**base, **env})
+        return out.stdout.strip()
+
+    def test_default_and_device_lock_dir(self):
+        self.assertEqual(self.lock(), "/tmp/1541ultimate-device-locks/c64u.lock")
+        self.assertEqual(self.lock(DEVICE_LOCK_DIR="/run/locks"), "/run/locks/c64u.lock")
+
+    def test_old_variable_applies_only_without_device_lock_dir(self):
+        self.assertEqual(self.lock(C64U_JTAG_LOCK="/tmp/old.lock"), "/tmp/old.lock")
+        self.assertEqual(self.lock(C64U_JTAG_LOCK="/tmp/old.lock", DEVICE_LOCK_DIR="/run/locks"),
+                         "/run/locks/c64u.lock")
 
 
 # ---- modes, ensure, plugins, desktop, main ----------------------------------------------------------------------------
@@ -654,6 +755,14 @@ class MainTest(Base):
         self.assertIsNone(self.store.get("power_on_seen"))
         self.assertEqual(self.main("check-power"), 0)
         self.assertIsNotNone(self.store.get("power_on_seen"))
+
+    def test_dry_run_snapshot_leaves_no_trace(self):
+        self.assertEqual(self.main("snapshot", "stock", "--dry-run"), 0)
+        self.assertFalse(os.path.exists(os.path.join(self.store.root, "stock")))
+        self.assertEqual(self.runner.calls, [])                          # the commands were only announced
+        self.assertEqual(self.store.names(), [])
+        self.assertEqual(self.main("snapshot", "stock"), 0)
+        self.assertEqual(self.store.names(), ["stock"])
 
     def test_snapshot_ensure_and_modes(self):
         self.assertEqual(self.main("snapshot"), 1)
