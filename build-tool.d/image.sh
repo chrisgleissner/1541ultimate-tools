@@ -1,49 +1,15 @@
 #!/usr/bin/env bash
-# image.sh — local Docker image preparation and FPGA build-tools detection
-
-detect_default_build_tools_dir() {
-    [ -n "$BUILD_TOOLS_DIR" ] && return 0
-
-    local candidate
-    for candidate in \
-        "$HOME/altera_lite" "$HOME/intelFPGA_lite" \
-        "$HOME/xilinx" "$HOME/Xilinx" \
-        "$HOME/Lattice" "$HOME/lattice" "$HOME/lscc"
-    do
-        if [ -d "$candidate" ]; then
-            BUILD_TOOLS_DIR="$HOME"
-            log_info "Auto-detected build tools directory: $BUILD_TOOLS_DIR"
-            return 0
-        fi
-    done
-
-    for candidate in \
-        "$HOME/altera_lite/18.1" \
-        "$HOME/intelFPGA_lite/18.1" \
-        "$HOME/intelFPGA_lite/18.1-cyclone" \
-        "/opt/build-tools" \
-        "/opt/altera_lite/18.1" \
-        "/opt/intelFPGA_lite/18.1"
-    do
-        if [ -d "$candidate/quartus" ] \
-           || [ -d "$candidate/altera_lite/18.1/quartus" ] \
-           || [ -d "$candidate/intelFPGA_lite/18.1/quartus" ]; then
-            BUILD_TOOLS_DIR="$candidate"
-            log_info "Auto-detected build tools directory: $BUILD_TOOLS_DIR"
-            return 0
-        fi
-    done
-}
+# image.sh — build-tools directory check and local Docker image preparation
 
 ensure_build_tools_dir() {
     [ -z "$BUILD_TOOLS_DIR" ] && return 0
-    [ -d "$BUILD_TOOLS_DIR" ] || die_usage "Build tools directory does not exist: $BUILD_TOOLS_DIR"
+    [ -d "$BUILD_TOOLS_DIR" ] || die "Build tools directory does not exist: $BUILD_TOOLS_DIR"
 }
 
 ensure_lattice_license_file() {
     [ -z "${LATTICE_LICENSE_FILE:-}" ] && return 0
     [ -f "$LATTICE_LICENSE_FILE" ] && [ -r "$LATTICE_LICENSE_FILE" ] \
-        || die_usage "LATTICE_LICENSE_FILE must name a readable license file."
+        || die "LATTICE_LICENSE_FILE must name a readable license file."
     LATTICE_LICENSE_FILE=$(realpath -- "$LATTICE_LICENSE_FILE")
     export LATTICE_LICENSE_FILE
 }
@@ -51,17 +17,8 @@ ensure_lattice_license_file() {
 prepare_image() {
     [ "$CUSTOM_IMAGE" -eq 1 ] && return 0
 
-    local target needs_lattice=0
-    for target in "${TARGETS[@]}"; do
-        target_requires_lattice "$target" && needs_lattice=1
-    done
-
-    # The legacy image lacks the runtime libraries Diamond loads, so an ECP5
-    # build always uses the prepared image.
-    if [ "$needs_lattice" -eq 0 ] \
-       && docker image inspect my_docker_image >/dev/null 2>&1; then
-        DOCKER_IMAGE="my_docker_image"
-        log_info "Using local legacy build image: $DOCKER_IMAGE"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log_info "Would prepare ${DOCKER_IMAGE} from ${BASE_IMAGE} if it is missing or out of date."
         return 0
     fi
 

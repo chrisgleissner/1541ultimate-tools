@@ -63,9 +63,9 @@ BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii # writes update_<commit>.ue2
 | Command | What it does | Details |
 |---|---|---|
 | `./build-tool` | Builds any firmware target inside Docker, and optionally deploys it over FTP or JTAG | [Build firmware](#build-firmware) |
-| `./build` | Runs the full sweep: clean, host unit tests, build, deploy, the remaining targets | [Build firmware](#build-firmware) |
+| `./build` | Runs the full sweep: clean, host unit tests, build, deploy, the remaining targets; exits non-zero if any step fails | [Build firmware](#build-firmware) |
 | `tooling/build_and_deploy_u64.sh` | Runs a built Ultimate 64 application from RAM over JTAG, in about 30 s | [docs/u64-jtag-deploy.md](docs/u64-jtag-deploy.md) |
-| `tooling/read_u64_jtag_terminal.sh`, `tooling/read_u64_uart_terminal.sh` | Ultimate 64 console output, over JTAG (`nios2-terminal`) or a USB-TTL adapter on the debug UART | `./build-tool --jtag-monitor u64`, `--uart-monitor u64` |
+| `tooling/read_u64_uart_terminal.sh` | Ultimate 64 console output from a USB-TTL adapter on the debug UART (the Ultimate 64 image has no JTAG UART) | `./build-tool --uart-monitor u64 [--uart-port DEVICE]` |
 | `tooling/flash_u64.py` | Flashes an Ultimate 64 Elite with nobody at the keyboard | [docs/u64-unattended-flash.md](docs/u64-unattended-flash.md) |
 | `tooling/u64ii_jtag.sh` | C64 Ultimate / Ultimate 64 Elite II over JTAG (FT232H or USB-Blaster): run an FPGA image and application from RAM, read the console and memory | [docs/c64u-jtag.md](docs/c64u-jtag.md) |
 | `tooling/u2pl_jtag.py` | UII+L over Adafruit FT232H: inspect a `.u2l`, back up flash, try an FPGA in SRAM, or program and verify the boot images | [docs/u2pl-jtag.md](docs/u2pl-jtag.md) |
@@ -79,8 +79,7 @@ BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii # writes update_<commit>.ue2
 | `tooling/apply_pr.sh` | Makes a throwaway worktree with upstream pull requests applied | `./build-tool --help` |
 | `vivado/install.sh` | Installs AMD Vivado 2024.1 for Artix-7 without interaction | [docs/vivado-install.md](docs/vivado-install.md) |
 
-`vivado/` and `patches/` are not installed; use them from a clone or an extracted release
-of this repository.
+`vivado/` is not installed; use it from a clone or an extracted release of this repository.
 
 ## Install
 
@@ -133,7 +132,7 @@ To update, `git -C 1541ultimate-tools pull` and run `install.sh` again.
 - **Installs the agent skills** from `skills/` into `.claude/skills/<name>/` and
   `.agents/skills/<name>/` (see [Agent skills](#agent-skills)).
 - **Does not copy anything else:** not this README, the other `docs/`, the logo, the
-  tests, `vivado/` or `patches/`.
+  tests or `vivado/`.
 - **Records the version** in `.1541ultimate-tools-version`: the release number, or
   for a development install the version plus the commit, such as `<version>+g<commit>`.
 - **Hides the tools from git:** it lists each installed path in the checkout's
@@ -171,7 +170,7 @@ tool that an older release had and a newer one dropped stays until you delete it
 | Requirement | Needed for |
 |---|---|
 | Docker | Every RISC-V target (`u2`, `u2pl`, `u64ii`) |
-| Quartus and Nios II EDS, on the host | The Nios II targets (`u64`, `u2plus`); the Docker image has no Nios toolchain |
+| Quartus and Nios II EDS, on the host | The Nios II targets (`u64`, `u2plus`); the Docker image has no Nios toolchain. Pass the directory that holds them with `--build-tools-dir`, or set `BUILD_TOOL_TOOLS_DIR`; only that directory is mounted into the container |
 | USB-Blaster | Ultimate 64 JTAG deploy and monitoring; optionally the C64 Ultimate JTAG tools |
 | FT232H (for example Adafruit) and Python 3 | C64 Ultimate / Ultimate 64 Elite II JTAG; pyftdi is installed into a virtual environment on first use |
 | Adafruit FT232H, Python 3.10+ and `ecpprog` | UII+L ECP5 JTAG backup and deployment; see [programmer setup](docs/u2pl-jtag.md#install-the-programmer) |
@@ -300,10 +299,11 @@ BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool -s u2pl    # software only (make u2pl_sw
 ```
 
 `./build` runs the full sweep. It cleans first, runs the host unit tests, builds,
-deploys, and checks each artifact's size. It takes no target and needs every
-toolchain plus a USB-Blaster for its JTAG step; without them it reports the run as
-not converged. It is slower than `build-tool`, so use it for a full check rather
-than for iteration:
+deploys, and checks that each artifact is non-empty and not implausibly large
+(above 32 MB). It takes no target and needs every toolchain plus a USB-Blaster for
+its JTAG step. A failed build, artifact check, JTAG step or FTP upload ends the run
+with `STATUS: NON-CONVERGED` and a non-zero exit status. It is slower than
+`build-tool`, so use it for a full check rather than for iteration:
 
 ```bash
 ./build                  # u64 -> JTAG -> FTP -> u64ii -> u2
@@ -399,7 +399,8 @@ or REST check whose host is missing is skipped, not failed.
 | Variable | Used by | When unset |
 |---|---|---|
 | `DEPLOY_HOST` | `./build` only (`build-tool` takes `--deploy-host`) | The FTP step of `./build` is skipped and reported as `SKIPPED` |
-| `DEPLOY_PATH` | `./build` only (`build-tool` takes `--deploy-path`) | `/Usb1/firmware/u64/custom` |
+| `DEPLOY_PATH` | `./build` only (`build-tool` takes `--deploy-path`) | `build-tool`'s default for the target: `/Usb1/firmware/u64/custom/` (u64), `/USB1/Firmware/custom/` (u64ii). Neither has been confirmed against a device's FTP root; check with `curl ftp://<device>/ --list-only` |
+| `BUILD_TOOL_TOOLS_DIR` | `build-tool` (`--build-tools-dir`) | Nothing is mounted: builds use the toolchains in the Docker image, as upstream CI does |
 | `U64_VERIFY_HOST` | REST check after a u64 deploy | Skipped with a warning |
 | `U64II_VERIFY_HOST` | REST check after a u64ii deploy | Skipped with a warning |
 | `U64II_JTAG_URL` | C64 Ultimate JTAG cable: an FT232H URL, or `blaster` | `ftdi://ftdi:232h/1` |
@@ -417,6 +418,16 @@ Or per invocation:
 ./build-tool --deploy-only -d u64 --deploy-host my-u64
 BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool u64ii -d u64ii --deploy-host 192.168.1.64 --verify-host 192.168.1.64
 ```
+
+`--deploy-only` needs no Docker. It uploads `update_<commit>.<ext>` of the commit at
+`HEAD`, under that name, and stops with an error when only a file from another commit
+exists. To upload such a file on purpose, name it:
+
+```bash
+./build-tool --deploy-only -d u64 --deploy-file update_1234abcd.u64 --deploy-host my-u64
+```
+
+A failed FTP upload makes `build-tool` exit with status 2.
 
 There are no credentials to set. The Ultimate's FTP server accepts anonymous logins.
 
@@ -470,19 +481,6 @@ produce the application binary the deploy steps need:
 ```bash
 make u64_no_esp
 make u64ii_no_esp
-```
-
-### `make u64_swapply`
-
-The command below uses the `VERSION` from [Install](#install). `patches/0001-add-u64_swapply-make-target.patch` adds a `u64_swapply` make target,
-which builds the Ultimate 64 application and runs it over JTAG in one step. It
-changes the tracked `Makefile`, so revert it before you push a branch upstream:
-
-```bash
-curl -fsSL "https://raw.githubusercontent.com/chrisgleissner/1541ultimate-tools/v${VERSION}/patches/0001-add-u64_swapply-make-target.patch" \
-    | git -C "$ULTIMATE" apply
-make -C "$ULTIMATE" u64_swapply
-git -C "$ULTIMATE" checkout Makefile        # when done
 ```
 
 ## Documentation

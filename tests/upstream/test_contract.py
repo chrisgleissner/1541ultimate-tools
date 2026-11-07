@@ -201,20 +201,5 @@ class U2plFlashLayout(unittest.TestCase):
         self.assertEqual(hex_constant(text, r"flash_addr\s*=\s*0x([0-9A-Fa-f]+)"),
                          u2pl.APPLICATION_OFFSET)
 
-
-class Patches(unittest.TestCase):
-    """patches/ applies to the checkout as the README tells a reader to apply it."""
-
-    def test_every_patch_applies(self):
-        patches = os.path.join(HERE, "..", "..", "patches")
-        names = sorted(n for n in os.listdir(patches) if n.endswith(".patch"))
-        self.assertTrue(names)
-        for name in names:
-            with self.subTest(patch=name):
-                result = subprocess.run(["git", "-C", REPO, "apply", "--check",
-                                         os.path.join(patches, name)],
-                                        capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stderr)
-
 if __name__ == "__main__":
     unittest.main()

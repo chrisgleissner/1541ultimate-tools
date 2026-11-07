@@ -36,6 +36,14 @@ log_section() {
     printf '\n%s==> %s%s\n' "$COLOR_BOLD" "$*" "$COLOR_RESET"
 }
 
+# die MESSAGE — report an environment or setup failure and exit 3. Unlike
+# die_usage it does not print the usage text: the command line was fine.
+die() {
+    log_error "$*"
+    exit 3
+}
+
+# die_usage MESSAGE — report a command-line error, print the usage, exit 3
 die_usage() {
     log_error "$*"
     printf '\n' >&2

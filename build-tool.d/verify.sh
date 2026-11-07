@@ -5,6 +5,11 @@ verify_build_artifact() {
     local target=$1
     local elf="" min_size=0 artifact artifact_size magic
 
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log_info "Would verify the ${target} build artifact."
+        return 0
+    fi
+
     if jtag_app_only "$target"; then
         local image
         image="$REPO_DIR/$(target_jtag_image "$target")"
@@ -33,14 +38,23 @@ verify_build_artifact() {
             elf="$REPO_DIR/target/u64ii/riscv/ultimate/result/ultimate.elf"
             min_size=$((512 * 1024))
             ;;
-        u2|u2plus|u2pl)
-            elf="$REPO_DIR/target/software/ultimate/result/ultimate.elf"
+        u2)
+            elf="$REPO_DIR/target/u2/riscv/ultimate/result/ultimate.elf"
+            min_size=$((256 * 1024))
+            ;;
+        u2plus)
+            elf="$REPO_DIR/target/u2plus/nios/ultimate/result/ultimate.elf"
+            min_size=$((256 * 1024))
+            ;;
+        u2pl)
+            elf="$REPO_DIR/target/u2plus_L/riscv/ultimate/result/ultimate.elf"
             min_size=$((256 * 1024))
             ;;
         *) return 0 ;;
     esac
 
-    artifact=$(find_existing_artifact "$target" 2>/dev/null || true)
+    # The file this run produced: update_<version>.<ext>, never an older one.
+    artifact=$(target_artifact_path "$target")
     CURRENT_ACTION="Verifying build artifact for ${target}"
 
     if [ -z "$artifact" ] || [ ! -f "$artifact" ]; then

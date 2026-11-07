@@ -65,6 +65,9 @@ jobs:
       - name: apply_pr.sh tests
         run: bash tooling/test_apply_pr.sh
 
+      - name: build-tool tests
+        run: python -m unittest discover -v -s tests -p 'test_build_tool.py'
+
       - name: install.sh tests
         run: python -m unittest discover -v -s tests -p 'test_install.py'
 

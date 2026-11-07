@@ -113,10 +113,9 @@ This is the **single firmware build command**. The wrapper updates submodules an
 prepares `1541u-build:latest` from `ghcr.io/gideonz/riscv:latest` on a fresh setup,
 including ESP-IDF tools and Synplify's required OpenGL/GStreamer/X11 runtime
 libraries. Image preparation and tool/license installation add time beyond the
-firmware build. A build that synthesizes the ECP5 always uses this prepared image,
-even when a legacy `my_docker_image` exists, because the legacy image lacks
-`libgthread-2.0.so.0` and Diamond fails to start in it. A custom image passed with
-`--image` must contain those dependencies too (see `build-tool.d/image.sh` for the
+firmware build. A build that synthesizes the ECP5 needs this prepared image,
+because older images lack `libgthread-2.0.so.0` and Diamond fails to start in them.
+A custom image passed with `--image` must contain those dependencies too (see `build-tool.d/image.sh` for the
 package list). Check which image the log selects. Do not bake licenses into a
 custom image.
 

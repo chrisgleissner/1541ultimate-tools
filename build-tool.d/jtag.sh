@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# jtag.sh — JTAG deployment and JTAG terminal monitoring
+# jtag.sh — JTAG deployment and the u64ii JTAG console monitor
 #
 # The two board families are reached differently. The Ultimate 64 (Cyclone V,
 # Nios II) goes through a USB-Blaster and nios2-download. The Ultimate 64
@@ -51,11 +51,11 @@ run_jtag_monitor() {
     local -a env_args=()
 
     case "$target" in
-        u64)   helper=$(_jtag_helper read_u64_jtag_terminal.sh) || helper="" ;;
         u64ii) helper=$(_jtag_helper read_u64ii_jtag_terminal.sh) || helper=""
                env_args+=(U64II_JTAG_URL="$JTAG_URL") ;;
         *)
-            log_error "JTAG monitor is supported for u64 and u64ii (c64u) only."
+            # The Ultimate 64 image has no JTAG UART (ALT_STDOUT is /dev/null).
+            log_error "JTAG monitor is supported for u64ii (c64u) only; for the Ultimate 64 use --uart-monitor u64."
             helper=""
             ;;
     esac
