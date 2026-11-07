@@ -63,7 +63,7 @@ Deploy only when the task asks for it, to a device nobody else is using. Do not 
   - Every JTAG command takes the c64u device lock. Never bypass or delete it, and never run `ecpprog` and a JTAG tool at once.
   - Run `tooling/c64u_monitor.py` during C64U work and watch its ALERT and WARN lines. Stop it with `--stop`, never `pkill -f`. Its video stream must be multicast.
   - A board that will not boot: `u64ii_jtag.sh recover`, then leave with `fpga`, never `reset` (the flashed firmware crashes on the kit's FPGA image).
-- **U2+L:** it cannot flash itself unattended. Every key and the final power cycle go through the C64U it is plugged into: `tooling/docs/agents/u2pl-deploy.md`. A cartridge that does not boot: `u2pl-jtag.md` in the tools docs.
+- **U2+L:** it cannot flash itself unattended. Every key and the final power cycle go through the C64U it is plugged into: `tooling/docs/agents/u2pl-deploy.md` (skill `u2pl-flash`). A cartridge that does not boot: `u2pl-jtag.md` in the tools docs.
 - **Other trees, upstream PRs:** `./build-tool --repo-dir <tree> c64u`; `./build-tool --apply-pr N --pr-base <ref> --jtag c64u`.
 
 ## Tests

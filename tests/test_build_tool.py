@@ -6,6 +6,7 @@ Nothing here touches a device or a real Docker daemon. A fake `docker` and a fak
 """
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -116,7 +117,7 @@ class Sandbox(unittest.TestCase):
 
     def env(self, **extra):
         env = {k: v for k, v in os.environ.items()
-               if not k.startswith(("BUILD_TOOL", "FAKE_", "U64", "DEPLOY_", "DOCKER"))}
+               if not k.startswith(("BUILD_TOOL", "FAKE_", "U64", "U2_FLASH", "DEPLOY_", "DOCKER", "DEVICE_LOCK"))}
         env.update(PATH=self.bin + os.pathsep + os.environ["PATH"], HOME=self.tmp,
                    NO_COLOR="1", FAKE_LOG=self.log)
         env.update(extra)
@@ -176,6 +177,64 @@ class BuildToolDeploy(Sandbox):
         result = self.run_tool("--deploy-file", path, "-d", "u64", "--deploy-host", "127.0.0.1")
         self.assertEqual(result.returncode, 3)
         self.assertIn("--deploy-only", result.stderr)
+
+
+class BuildToolU2Flash(Sandbox):
+    """--u2-flash hands the rest of the command line to tooling/u2_flash.py; nothing here reaches a device."""
+
+    def run_tool(self, *args, **env):
+        env.setdefault("DEVICE_LOCK_DIR", os.path.join(self.tmp, "locks"))
+        return subprocess.run([BUILD_TOOL, "--repo-dir", self.repo, *args], cwd=self.tmp,
+                              env=self.env(**env), capture_output=True, text=True, timeout=60)
+
+    def test_help_describes_the_options_the_script_has(self):
+        result = self.run_tool("--help")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("tooling/u2_flash.py", result.stdout)
+        self.assertNotIn("tools/api", result.stdout)
+        self.assertNotIn("--power-host", result.stdout)
+        script_help = self.run_tool("--u2-flash", "--help").stdout
+        text = result.stdout
+        section = text[text.index("U2+L REST FLASH"):text.index("NOTES")]
+        examples = [line for line in text.splitlines() if "build-tool --u2-flash" in line or " --u2-flash " in line]
+        options = set(re.findall(r"--[a-z0-9-]+", section + " ".join(examples))) - {"--u2-flash", "--help"}
+        self.assertGreaterEqual(len(options), 6)
+        for option in options:
+            self.assertIn(option, script_help, option)
+
+    def test_the_script_is_found_and_its_own_help_is_shown(self):
+        result = self.run_tool("--u2-flash", "--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("usage: u2_flash.py", result.stdout)
+        self.assertNotIn("--power-host", result.stdout)
+
+    def test_a_dry_run_names_the_artifact_branch_and_commit_of_the_checkout(self):
+        artifact = self.put(f"update_{self.head}.u2l", 300 * 1024)
+        branch = git(self.repo, "rev-parse", "--abbrev-ref", "HEAD")
+        head = git(self.repo, "rev-parse", "--short", "HEAD")
+        result = self.run_tool("--u2-flash", "--dry-run", "--date", "251107")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"Local artifact OK: {artifact} ", result.stdout)
+        self.assertIn(f"/USB1/Firmware/latest/{branch}/251107/{head}/update.u2l", result.stdout)
+
+    def test_options_after_the_flag_override_the_defaults_and_a_global_dry_run_is_passed_on(self):
+        self.put(f"update_{self.head}.u2l", 300 * 1024)
+        result = self.run_tool("--dry-run", "--u2-flash", "--branch", "topic", "--git-id", "id9",
+                               "--date", "251107", "--dest-root", "/USB0/fw")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Remote destination: /USB0/fw/topic/251107/id9/update.u2l", result.stdout)
+        self.assertIn("DRY_RUN_OK", result.stdout)
+
+    def test_a_missing_host_is_a_usage_error_and_the_environment_supplies_one(self):
+        self.put(f"update_{self.head}.u2l", 300 * 1024)
+        result = self.run_tool("--u2-flash", "--upload-only")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("--host (or U2_FLASH_HOST) is required", result.stderr)
+        result = self.run_tool("--u2-flash", "--upload-only", U2_FLASH_HOST="127.0.0.1:1")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("upload failed: FTP error", result.stdout)
+        with open(os.path.join(self.tmp, "locks", "c64u.lock")) as handle:
+            self.assertEqual(handle.read(), "")
 
 
 class BuildToolBuild(Sandbox):

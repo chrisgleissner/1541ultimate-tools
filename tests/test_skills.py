@@ -18,7 +18,7 @@ from test_guide import FORBIDDEN  # noqa: E402  (the generic and the local patte
 
 TOOLS = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 SKILLS = sorted(glob.glob(os.path.join(TOOLS, "skills", "*", "SKILL.md")))
-EXPECTED = {"c64u-jtag-run", "u2pl-recover", "u64-flash-unattended", "pr-minimal-diff",
+EXPECTED = {"c64u-jtag-run", "u2pl-flash", "u2pl-recover", "u64-flash-unattended", "pr-minimal-diff",
             "vhdl-analysis", "device-failure-triage"}
 BODY_WORD_BUDGET = 500
 REPO = os.environ.get("ULTIMATE_REPO_DIR")
@@ -112,7 +112,7 @@ class SkillsTest(unittest.TestCase):
     def test_each_skill_with_hardware_states_its_authorisation_rule(self):
         for path in SKILLS:
             name = name_of(path)
-            if name in ("c64u-jtag-run", "u2pl-recover", "u64-flash-unattended"):
+            if name in ("c64u-jtag-run", "u2pl-flash", "u2pl-recover", "u64-flash-unattended"):
                 text = read(path)
                 with self.subTest(skill=name):
                     self.assertIn("device lock", text)
