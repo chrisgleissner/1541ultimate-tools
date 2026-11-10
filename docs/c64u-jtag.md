@@ -351,6 +351,12 @@ closing its connection first; the monitor logs them without alerting.
 Stop the monitor with `--stop`, which signals the pid in `mon/monitor.pid`. A
 `pkill -f` pattern also matches the shell that runs it.
 
+The VIC stream is shared. While the monitor runs it restarts its own stream when it
+sees none, and that breaks tests that start streams themselves: `uci_targets_test`
+fails its `palette-stream` scenario ("no palette packet arrived within 2 seconds") with
+the monitor running and passes with it stopped. Stop the monitor, or create
+`mon/hold`, before a test run that uses the stream.
+
 ## Debugging with gdb
 
 The CPU has no debug module: nothing over JTAG can halt it, step it or read its
@@ -397,6 +403,15 @@ running other JTAG commands.
   FPGA, after which the bootloader starts the flashed application. A power cycle does
   the same. Flash was never written.
 - **Back to the flashed application without a power cycle:** `tooling/u64ii_jtag.sh reset`.
+- **A board whose flash holds a boot host instead of the application:** neither `fpga`
+  nor `reset` is a way back. They start the flashed code on the bitstream from
+  `external/`, REST stays silent, and the board can keep restarting its boot sequence
+  (audible on the analogue output). Do not run them at the end of a test. Return the
+  board with the restore command of its setup, for `c64u-mode`:
+  `c64u-mode ensure <mode> --allow-power-cycle`. Before the first JTAG load, check that
+  the restore can work: `c64u-mode check-power` must read On, and the smart outlet it
+  switches must answer (`powerctl status <outlet>`). When the restore fails, the board
+  is stranded: stop, tell the owner and ask for a manual power cycle.
 - **A board that does not boot:** `tooling/u64ii_jtag.sh recover`. It configures the
   kit's FPGA image, loads the kit's Ultimate 3.14c application into RAM and starts it,
   which takes about 20 s. From its menu, open the file browser, pick an `update.ue2` on
