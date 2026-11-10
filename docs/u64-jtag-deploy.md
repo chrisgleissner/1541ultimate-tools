@@ -134,6 +134,33 @@ the flash design and, with it, the older flash firmware; always redeploy a known
 before measuring anything. And this only helps for a stalled fabric. It is not part of
 the normal edit, build, deploy loop.
 
+## Running a tree other than the checkout
+
+To compare two firmware trees on one board (for example upstream `master` and a pull
+request on top of it), build each in its own git worktree and point the deploy script at
+it:
+
+```bash
+git worktree add --detach ../wt-master upstream/master
+git -C ../wt-master submodule update --init --recursive
+BUILD_TOOL_ALLOW_PARTIAL=1 ./build-tool -s --no-submodule-update \
+    --build-tools-dir <intel-fpga-root> --repo-dir ../wt-master u64
+ULTIMATE_REPO_DIR=../wt-master bash tooling/build_and_deploy_u64.sh
+```
+
+- `build-tool` and `tooling/` exist only in the checkout that carries them, so run them
+  from there and pass the tree with `--repo-dir`.
+- `--build-tools-dir` takes the Intel FPGA version directory, the one that contains
+  `quartus/` and `nios2eds/` (for example `~/altera_lite/18.1`), not its parent.
+- A single target needs `BUILD_TOOL_ALLOW_PARTIAL=1`. A software-only build of `u64`
+  takes about a minute.
+- The deploy script loads the ELF of `ULTIMATE_REPO_DIR` and does not build. The board
+  reports the commit of that tree in `/v1/info`.
+- The loaded image is volatile and stays until the next power cycle. When the
+  comparison is done, load the tree that should keep running rather than leaving a
+  pull request build on the board.
+- Merge a pull request into a worktree by commit id: `FETCH_HEAD` is per worktree.
+
 ## The FTP deploy path depends on the USB slot
 
 `build-tool -d u64` uploads to `/Usb1/firmware/u64/custom/` by default. The volume name
