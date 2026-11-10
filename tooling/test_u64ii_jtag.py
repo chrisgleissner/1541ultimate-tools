@@ -570,6 +570,38 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(sent, body)
         self.assertTrue(model.configured)
 
+    def test_configure_can_hold_the_cpu_in_reset(self):
+        b, model, _ = board()
+        b.identify()
+        body = b"\xff" * 16 + b"\xaa\x99\x55\x66" + bytes(range(64))
+        with tempfile.NamedTemporaryFile(suffix=".bit") as handle:
+            handle.write(body)
+            handle.flush()
+            b.configure(handle.name, hold_cpu=True)
+        self.assertEqual(model.chain.write_vector, jt.OUTPUT_CPU_RESET)
+
+    def test_configure_leaves_the_cpu_running_by_default(self):
+        b, model, _ = board()
+        b.identify()
+        body = b"\xff" * 16 + b"\xaa\x99\x55\x66" + bytes(range(64))
+        with tempfile.NamedTemporaryFile(suffix=".bit") as handle:
+            handle.write(body)
+            handle.flush()
+            b.configure(handle.name)
+        self.assertEqual(model.chain.write_vector, 0)
+
+    def test_holding_the_cpu_gives_up_when_the_design_never_answers(self):
+        model = ArtixModel()
+        model.accept_config = False
+        b, _, _ = board(model)
+        b.identify()
+        body = b"\xff" * 16 + b"\xaa\x99\x55\x66" + bytes(range(64))
+        with tempfile.NamedTemporaryFile(suffix=".bit") as handle:
+            handle.write(body)
+            handle.flush()
+            with self.assertRaisesRegex(jt.JtagError, "did not bring up an Ultimate design"):
+                b.configure(handle.name, hold_cpu=True)
+
     def test_bitstream_for_another_part_is_refused_before_jprogram(self):
         b, model, _ = board()
         b.identify()
@@ -1326,8 +1358,28 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(model.memory[jt.APP_ADDRESS + 4], b"\xee\x00\x00\x00")
         self.assertEqual(model.memory[jt.BOOT_MAGIC_ADDRESS + 4],
                          struct.pack("<L", jt.BOOT_MAGIC_VALUE))
-        self.assertIn(mock.call(1.0), self.sleep.call_args_list)
+        self.assertNotIn(mock.call(1.0), self.sleep.call_args_list)
         self.assertIn("with read-back", out)
+
+    def test_cold_run_holds_the_cpu_before_the_flashed_application_can_run(self):
+        # The flashed application is built for the design in flash. On the bitstream loaded over JTAG it must
+        # never start, so the reset is asserted as soon as the design answers, before anything is loaded.
+        bit = self.file("my.bit", data=bitstream(0x0362C093))
+        app = self.file("ultimate.bin", data=b"\xaa\xbb\xcc\xdd")
+        seen = []
+        model = ArtixModel()
+        self.sleep.side_effect = lambda seconds: seen.append((seconds, model.chain.write_vector, model.configured))
+        rc, out, model, _ = run_main(["run", "--fpga", bit, "--bin", app], model)
+        self.assertEqual(rc, 0)
+        after_jstart = [vector for _, vector, configured in seen if configured]
+        self.assertEqual(after_jstart, [])      # no settle sleep is needed after configuration
+        self.assertIn("holding the CPU in reset; loading", out)
+
+    def test_fpga_command_leaves_the_flashed_application_running(self):
+        bit = self.file("my.bit", data=bitstream(0x0362C093))
+        rc, out, model, _ = run_main(["fpga", "--bit", bit])
+        self.assertEqual(rc, 0)
+        self.assertEqual(model.chain.write_vector, 0)
 
     def test_recover_needs_the_50t(self):
         model = ArtixModel()

@@ -747,7 +747,25 @@ class Board:
                             "0xDEAD1541); load one with --fpga")
 
     # -- FPGA ------------------------------------------------------------------
-    def configure(self, path: str) -> None:
+    def hold_cpu_in_reset(self, seconds: float = 2.0) -> bool:
+        """Assert the CPU reset as soon as the freshly configured design answers on the user chain.
+
+        Right after configuration the bootloader copies the flashed application into RAM and starts it. That
+        application is built for the design in flash, not for the bitstream just loaded over JTAG; on another
+        design it drives the audio and video hardware wrongly (an audible rumble) and can load a different
+        design. Held in reset, it never runs. Returns False when the design did not answer in time."""
+        deadline = time.monotonic() + seconds
+        while True:
+            if self.design_loaded():
+                self.chain.set_outputs(OUTPUT_CPU_RESET)
+                return True
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(0.01)
+
+    def configure(self, path: str, hold_cpu: bool = False) -> None:
+        """Configure the FPGA from `path` (volatile). With `hold_cpu`, the CPU is held in reset from the moment
+        the design answers, so that the flashed application does not run on it."""
         with open(path, "rb") as handle:
             data = handle.read()
         if b"\xaa\x99\x55\x66" not in data[:4096]:
@@ -776,8 +794,12 @@ class Board:
             status = self.tap.ir_capture()
             self.tap.reset()
             self.chain.register = None
-            time.sleep(0.5)
-            if not self.design_loaded():
+            if hold_cpu:
+                held = self.hold_cpu_in_reset()
+            else:
+                time.sleep(0.5)
+                held = self.design_loaded()
+            if not held:
                 raise JtagError("configuration did not bring up an Ultimate design "
                                 f"(IR capture 0x{status:02X})")
         except BaseException:
@@ -963,8 +985,7 @@ def cmd_run(board: Board, args) -> int:
         log("--warm: keeping the running FPGA image; only the CPU restarts")
         board.require_design()
     else:
-        board.configure(bitstream_for(board, args.fpga))
-        time.sleep(1.0)                  # the flashed application has started by now
+        board.configure(bitstream_for(board, args.fpga), hold_cpu=True)
     board.run_application(image, verify=not args.no_verify)
     if args.console:
         board.console(args.console)
@@ -976,8 +997,7 @@ def cmd_recover(board: Board, args) -> int:
     if board.part != "XC7A50T":
         raise JtagError("the recovery kit carries an XC7A50T bitstream only; use "
                         "run --fpga auto with a built ultimate.bin instead")
-    board.configure(os.path.join(kit, "u64_mk2_artix.bit"))
-    time.sleep(1.0)
+    board.configure(os.path.join(kit, "u64_mk2_artix.bit"), hold_cpu=True)
     with open(os.path.join(kit, "ultimate.bin"), "rb") as handle:
         board.run_application(handle.read(), verify=True)
     log("the recovery application (3.14c) runs from RAM; install update.ue2 from its "
