@@ -46,9 +46,22 @@ class FakeRunner:
         self.unstable_reads = 0
         self.outlets = OUTLETS if outlets is None else outlets
         self.fail = set()
+        self.flaky = {}                 # command prefix (tuple) -> failures left before it works
+        self.outlet_state = "on"        # what powerctl status reports
+        self.fail_cycle = False         # powerctl cycle fails, leaving the outlet in outlet_state
 
     def __call__(self, argv, text=True, capture_output=False):
         self.calls.append(argv)
+        for key, left in list(self.flaky.items()):
+            if left > 0 and tuple(argv[:len(key)]) == key:
+                self.flaky[key] = left - 1
+                return subprocess.CompletedProcess(argv, 1, "", "")
+        if argv[:2] == ["powerctl", "status"]:
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"alias": argv[2], "state": self.outlet_state}), "")
+        if argv[:2] == ["powerctl", "on"]:
+            self.outlet_state = "on"
+        if argv[:2] == ["powerctl", "cycle"] and self.fail_cycle:
+            return subprocess.CompletedProcess(argv, 1, "", "")
         if argv[0] in self.fail:
             return subprocess.CompletedProcess(argv, 3, "", "")
         if argv[0] == "openFPGALoader":
@@ -485,6 +498,51 @@ class PowerCycleTest(Base):
         self.assertEqual(self.runner.commands()[-1], "powerctl cycle")
         self.assertIn("C64U", self.runner.calls[-1])
         self.assertIsNotNone(self.store.get("power_on_seen"))
+
+    def test_an_outlet_that_answers_late_is_tried_again_before_the_cycle(self):
+        self.store.update(power_on_seen=time.time() - 86400)
+        b = self.board({POWER: (200, {"errors": []})})
+        self.runner.flaky[("powerctl", "status")] = 2
+        b.power_cycle()
+        cmds = self.runner.commands()
+        self.assertEqual(cmds.count("powerctl status"), 3)
+        self.assertEqual(cmds.count("powerctl cycle"), 1)
+        self.assertLess(cmds.index("powerctl status"), cmds.index("powerctl cycle"))
+
+    def test_an_outlet_that_never_answers_is_never_switched(self):
+        self.store.update(power_on_seen=time.time() - 86400)
+        b = self.board({POWER: (200, {"errors": []})})
+        self.runner.flaky[("powerctl", "status")] = 99
+        with self.assertRaisesRegex(cm.ModeError, "failed with exit code 1 .*tried 5 times"):
+            b.power_cycle()
+        self.assertNotIn("powerctl cycle", self.runner.commands())
+
+    def test_a_failed_cycle_is_not_repeated_and_leaves_the_outlet_on(self):
+        self.store.update(power_on_seen=time.time() - 86400)
+        b = self.board({POWER: (200, {"errors": []})})
+        self.runner.fail_cycle = True
+        self.runner.outlet_state = "off"
+        with self.assertRaisesRegex(cm.ModeError, "powerctl failed.*outlet is on again"):
+            b.power_cycle()
+        cmds = self.runner.commands()
+        self.assertEqual(cmds.count("powerctl cycle"), 1)
+        self.assertEqual(cmds.count("powerctl on"), 1)
+        self.assertEqual(self.runner.outlet_state, "on")
+
+    def test_a_failed_cycle_with_the_outlet_still_on_switches_nothing(self):
+        self.store.update(power_on_seen=time.time() - 86400)
+        b = self.board({POWER: (200, {"errors": []})})
+        self.runner.fail_cycle = True
+        with self.assertRaisesRegex(cm.ModeError, "powerctl failed"):
+            b.power_cycle()
+        self.assertNotIn("powerctl on", self.runner.commands())
+
+    def test_the_outlet_list_is_read_again_after_a_failure(self):
+        self.runner = FakeRunner()
+        self.runner.flaky[("powerctl", "list")] = 2
+        b = FakeBoard(config(), run=self.runner, allow_power_cycle=True, state=self.store)
+        self.assertEqual(b.check_outlet(), "C64U")
+        self.assertEqual(self.runner.commands().count("powerctl list"), 3)
 
     def test_rest_poweroff_without_a_state_store(self):
         info = iter([(200, {}), (None, "")])

@@ -106,6 +106,10 @@ INSTALL_HINTS = {
     "powerctl": "install powerctl (https://github.com/chrisgleissner/powerctl)",
 }
 POWER_SETTING_MAX_AGE = 30 * 86400
+# A smart outlet on a weak WiFi link sometimes fails to answer or to log in. Read-only powerctl commands are
+# tried this often, this many seconds apart, before the tool gives up.
+OUTLET_TRIES = 5
+OUTLET_RETRY_SECONDS = 4.0
 DEFAULT_RELOAD_WAIT = 60.0         # seconds to wait for the REST after a reload
 
 
@@ -214,6 +218,18 @@ class Board:
             raise ModeError(f"{argv[0]} failed with exit code {r.returncode}")
         return r
 
+    def run_outlet(self, argv: list[str], capture: bool = False, always: bool = True):
+        """Run a powerctl command that is safe to repeat, again after a failure: a weak WiFi link to the outlet makes
+        single attempts fail. The last failure is raised."""
+        for attempt in range(1, OUTLET_TRIES + 1):
+            try:
+                return self.run(argv, capture=capture, always=always)
+            except ModeError as exc:
+                if attempt == OUTLET_TRIES or "command not found" in str(exc):
+                    raise ModeError(f"{exc} (tried {attempt} times)") from None
+                log(f"{exc}; trying again in {OUTLET_RETRY_SECONDS:g} s ({attempt} of {OUTLET_TRIES})")
+                time.sleep(OUTLET_RETRY_SECONDS)
+
     def ofl(self, *args: str, check: bool = True):
         board = self.cfg["board"]
         cable = board.get("cable", "").strip() or DEFAULT_CABLE
@@ -305,8 +321,28 @@ class Board:
                                 "'c64u-mode check-power' once, or power the board off and on yourself")
             log("no Ultimate REST now; 'Power On After Power Loss' was seen On "
                 f"{int((time.time() - float(seen)) / 86400)} days ago: hard power cycle")
-        self.run(["powerctl", "cycle", outlet, "--yes", "--json", "--off-seconds", "8",
-                  "--wait-host", self.host, "--wait-port", str(wait_port), "--wait-timeout", "180"])
+        # The outlet has to answer before anything is switched. The cycle itself is run once: it is not repeated,
+        # because a cycle that failed after switching would cut the power a second time.
+        self.run_outlet(["powerctl", "status", outlet, "--json"], capture=True)
+        try:
+            self.run(["powerctl", "cycle", outlet, "--yes", "--json", "--off-seconds", "8",
+                      "--wait-host", self.host, "--wait-port", str(wait_port), "--wait-timeout", "180"])
+        except ModeError as exc:
+            self.switch_back_on(outlet)
+            raise ModeError(f"{exc}; the outlet is on again, check the board") from None
+
+    def switch_back_on(self, outlet: str):
+        """After a failed cycle: when the outlet was left off, switch it on, so the board does not stay without power."""
+        r = self.run_outlet(["powerctl", "status", outlet, "--json"], capture=True)
+        try:
+            data = json.loads(r.stdout or "[]")
+        except ValueError:
+            data = []
+        entry = data[0] if isinstance(data, list) and data else data
+        state = str(entry.get("state", "")).lower() if isinstance(entry, dict) else ""
+        if state == "off":
+            log("the outlet is off after the failed cycle; switching it on")
+            self.run_outlet(["powerctl", "on", outlet], always=False)
 
     def check_outlet(self) -> str:
         """The configured outlet, after checking it against the deny list and powerctl's registry.
@@ -322,7 +358,7 @@ class Board:
         # equal to a denied alias, or a prefix of one (powerctl resolves a unique alias prefix)
         if any(d == low or d.startswith(low) for d in deny):
             raise ModeError(f"outlet {outlet!r} is, or abbreviates, an outlet on the deny list; refusing to switch it")
-        r = self.run(["powerctl", "list", "--json"], capture=True, always=True)
+        r = self.run_outlet(["powerctl", "list", "--json"], capture=True)
         try:
             devices = json.loads(r.stdout or "[]")
         except ValueError:
